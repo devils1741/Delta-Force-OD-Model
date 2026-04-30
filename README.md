@@ -17,7 +17,6 @@
 - 默认输入尺寸为 `640x640`
 - 默认捕获屏幕中心 `1600x900` ROI
 - 默认检测频率上限为 `60 FPS`
-- 检测不到目标时不打印日志
 
 ## 推理流程
 
@@ -61,7 +60,7 @@ weights/best_640_trt10_16_sm89_fp16.engine
 
 如果替换模型、输入尺寸或 TensorRT/CUDA 环境变化，建议删除旧 engine，让程序重新构建。
 
-## 关键参数
+## 主要参数
 
 输入尺寸在 [Detection.h](Detection.h)：
 
@@ -95,4 +94,3 @@ int captureH = std::min(900, screenH);
 - 游戏建议使用无边框窗口或窗口化全屏，DXGI 捕获更稳定。
 - 如果游戏帧数下降明显，可以降低 `kTargetInferenceFps`，例如改为 `45` 或 `30`。
 - 如果远处小目标漏检，可以尝试减小 ROI，让目标在输入中占比更大。
-- Xbox Game Bar 可能录不到 overlay 框，录制建议使用 OBS 的 Display Capture。
