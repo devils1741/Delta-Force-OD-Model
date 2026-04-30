@@ -1,0 +1,29 @@
+# Build outputs
+cmake-build-*/
+build/
+out/
+
+# Model weights and generated engines
+weights/
+*.engine
+*.onnx
+*.pt
+*.pth
+
+# IDE and local metadata
+.idea/
+.vs/
+*.user
+*.suo
+
+# Compiled binaries and debug files
+*.exe
+*.dll
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.obj
+
+# Logs
+*.log
