@@ -30,7 +30,7 @@ DXGI screen capture
 
 ## 依赖
 
-- Windows
+- Windows10/11
 - CUDA Toolkit
 - TensorRT 10.x
 - CMake

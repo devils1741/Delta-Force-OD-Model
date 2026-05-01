@@ -26,8 +26,8 @@ __global__ void preprocessKernel(
     int localY = y - letterbox.padY;
     if (localX >= 0 && localY >= 0 &&
         localX < letterbox.resizedW && localY < letterbox.resizedH) {
-        int srcX = letterbox.captureX + static_cast<int>(localX / letterbox.scale);
-        int srcY = letterbox.captureY + static_cast<int>(localY / letterbox.scale);
+        int srcX = static_cast<int>(localX / letterbox.scale);
+        int srcY = static_cast<int>(localY / letterbox.scale);
         srcX = min(max(srcX, 0), sourceW - 1);
         srcY = min(max(srcY, 0), sourceH - 1);
         uchar4 bgra = tex2D<uchar4>(texture, srcX + 0.5f, srcY + 0.5f);

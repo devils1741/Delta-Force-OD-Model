@@ -2,6 +2,7 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include "AppConfig.h"
 #include "Detection.h"
 #include "DxgiScreenCapture.h"
 #include "OverlayWindow.h"
@@ -24,8 +25,6 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
-constexpr int kTargetInferenceFps = 60;
-
 void enableDpiAwareness() {
     using SetDpiAwarenessContextFn = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT);
     auto* user32 = GetModuleHandleW(L"user32.dll");
@@ -41,19 +40,18 @@ void enableDpiAwareness() {
     SetProcessDPIAware();
 }
 
-fs::path findOnnxModel() {
+fs::path findConfigFile() {
     for (auto const& candidate : {
-             fs::path("weights/best.onnx"),
-             fs::path("../weights/best.onnx"),
-             fs::current_path() / "weights/best.onnx",
-             fs::current_path().parent_path() / "weights/best.onnx",
+             fs::path("config/config.yaml"),
+             fs::path("../config/config.yaml"),
+             fs::current_path() / "config/config.yaml",
+             fs::current_path().parent_path() / "config/config.yaml",
          }) {
         if (fs::exists(candidate)) {
             return fs::absolute(candidate);
         }
     }
-    throw std::runtime_error(
-        "Cannot find weights/best.onnx. Run from the project root or cmake-build-debug.");
+    throw std::runtime_error("Cannot find config/config.yaml. Run from the project root or cmake-build-debug.");
 }
 
 } // namespace
@@ -63,8 +61,13 @@ int main() {
         std::cout << std::unitbuf;
         enableDpiAwareness();
 
-        fs::path onnxPath = findOnnxModel();
-        fs::path enginePath = onnxPath.parent_path() / "best_640_trt10_16_sm89_fp16.engine";
+        fs::path configPath = findConfigFile();
+        AppConfig::instance().load(configPath);
+        auto const& config = AppConfig::instance();
+
+        fs::path onnxPath = config.model().onnxPath;
+        fs::path enginePath = config.model().enginePath;
+        std::cout << "Config: " << configPath << '\n';
         std::cout << "ONNX model: " << onnxPath << '\n';
         std::cout << "Engine cache: " << enginePath << '\n';
 
@@ -94,7 +97,7 @@ int main() {
                 uint64_t frameIndex = 0;
                 auto nextFrameTime = Clock::now();
                 while (running.load(std::memory_order_relaxed)) {
-                    nextFrameTime += std::chrono::milliseconds(1000 / kTargetInferenceFps);
+                    nextFrameTime += std::chrono::microseconds(1'000'000 / config.inference().targetFps);
 
                     auto start = Clock::now();
                     if (!capture.captureToDevice(detector.deviceInput(), detector.stream())) {

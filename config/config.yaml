@@ -1,0 +1,18 @@
+model:
+  onnx_path: weights/best.onnx
+  engine_path: weights/best_640_trt10_16_sm89_fp16.engine
+
+inference:
+  target_fps: 60
+  score_threshold: 0.30
+  nms_threshold: 0.45
+  max_detections: 300
+
+capture:
+  output_index: 0
+  roi_width: 1600
+  roi_height: 900
+
+tensorrt:
+  fp16: true
+  workspace_mb: 1024

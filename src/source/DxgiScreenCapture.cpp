@@ -1,5 +1,6 @@
 #include "DxgiScreenCapture.h"
 
+#include "AppConfig.h"
 #include "CudaPreprocess.h"
 
 #include <cuda_d3d11_interop.h>
@@ -30,8 +31,9 @@ void checkCuda(cudaError_t status, char const* what) {
 }
 
 LetterboxInfo makeLetterbox(int screenW, int screenH) {
-    int captureW = std::min(1600, screenW);
-    int captureH = std::min(900, screenH);
+    auto const& capture = AppConfig::instance().capture();
+    int captureW = std::min(capture.roiWidth, screenW);
+    int captureH = std::min(capture.roiHeight, screenH);
 
     LetterboxInfo info{};
     info.screenW = screenW;
@@ -71,7 +73,7 @@ bool DxgiScreenCapture::captureToDevice(float* deviceInput, cudaStream_t stream)
 
     DXGI_OUTDUPL_FRAME_INFO frameInfo{};
     ComPtr<IDXGIResource> frameResource;
-    HRESULT hr = duplication_->AcquireNextFrame(16, &frameInfo, &frameResource);
+    HRESULT hr = duplication_->AcquireNextFrame(0, &frameInfo, &frameResource);
     if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
         return false;
     }
@@ -82,14 +84,28 @@ bool DxgiScreenCapture::captureToDevice(float* deviceInput, cudaStream_t stream)
 
     ComPtr<ID3D11Texture2D> frameTexture;
     checkHr(frameResource.As(&frameTexture), "Query desktop frame texture");
-    context_->CopyResource(cudaTexture_.Get(), frameTexture.Get());
+
+    D3D11_BOX roi{};
+    roi.left = static_cast<UINT>(letterbox_.captureX);
+    roi.top = static_cast<UINT>(letterbox_.captureY);
+    roi.front = 0;
+    roi.right = static_cast<UINT>(letterbox_.captureX + letterbox_.captureW);
+    roi.bottom = static_cast<UINT>(letterbox_.captureY + letterbox_.captureH);
+    roi.back = 1;
+    context_->CopySubresourceRegion(cudaTexture_.Get(), 0, 0, 0, 0, frameTexture.Get(), 0, &roi);
     checkHr(duplication_->ReleaseFrame(), "IDXGIOutputDuplication::ReleaseFrame");
 
     checkCuda(cudaGraphicsMapResources(1, &cudaResource_, stream), "cudaGraphicsMapResources");
     cudaArray_t source{};
     cudaError_t status = cudaGraphicsSubResourceGetMappedArray(&source, cudaResource_, 0, 0);
     if (status == cudaSuccess) {
-        status = launchDxgiPreprocess(source, screenW_, screenH_, letterbox_, deviceInput, stream);
+        status = launchDxgiPreprocess(
+            source,
+            letterbox_.captureW,
+            letterbox_.captureH,
+            letterbox_,
+            deviceInput,
+            stream);
     }
     cudaError_t unmapStatus = cudaGraphicsUnmapResources(1, &cudaResource_, stream);
     checkCuda(status, "launchDxgiPreprocess");
@@ -127,7 +143,8 @@ void DxgiScreenCapture::initDuplication() {
     checkHr(dxgiDevice->GetAdapter(&adapter), "IDXGIDevice::GetAdapter");
 
     ComPtr<IDXGIOutput> output;
-    checkHr(adapter->EnumOutputs(0, &output), "IDXGIAdapter::EnumOutputs");
+    checkHr(adapter->EnumOutputs(static_cast<UINT>(AppConfig::instance().capture().outputIndex), &output),
+            "IDXGIAdapter::EnumOutputs");
 
     DXGI_OUTPUT_DESC desc{};
     checkHr(output->GetDesc(&desc), "IDXGIOutput::GetDesc");
@@ -142,8 +159,8 @@ void DxgiScreenCapture::initDuplication() {
 
 void DxgiScreenCapture::initCudaTexture() {
     D3D11_TEXTURE2D_DESC desc{};
-    desc.Width = static_cast<UINT>(screenW_);
-    desc.Height = static_cast<UINT>(screenH_);
+    desc.Width = static_cast<UINT>(letterbox_.captureW);
+    desc.Height = static_cast<UINT>(letterbox_.captureH);
     desc.MipLevels = 1;
     desc.ArraySize = 1;
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;

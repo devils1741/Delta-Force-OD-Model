@@ -4,8 +4,6 @@
 
 constexpr int kInputW = 640;
 constexpr int kInputH = 640;
-constexpr float kScoreThreshold = 0.30f;
-constexpr float kNmsThreshold = 0.45f;
 
 struct Box {
     float x1{};

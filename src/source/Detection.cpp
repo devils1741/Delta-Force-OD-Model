@@ -1,5 +1,7 @@
 #include "Detection.h"
 
+#include "AppConfig.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -19,15 +21,17 @@ float iou(Box const& a, Box const& b) {
 } // namespace
 
 std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo const& letterbox) {
+    auto const& config = AppConfig::instance().inference();
     std::vector<Box> boxes;
-    for (int i = 0; i < 300; ++i) {
+    int maxDetections = std::min(config.maxDetections, static_cast<int>(output.size() / 6));
+    for (int i = 0; i < maxDetections; ++i) {
         float a = output[i * 6 + 0];
         float b = output[i * 6 + 1];
         float c = output[i * 6 + 2];
         float d = output[i * 6 + 3];
         float score = output[i * 6 + 4];
 
-        if (score < kScoreThreshold) {
+        if (score < config.scoreThreshold) {
             continue;
         }
 
@@ -68,7 +72,7 @@ std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo co
     for (auto const& box : boxes) {
         bool suppressed = false;
         for (auto const& selected : kept) {
-            if (iou(box, selected) > kNmsThreshold) {
+            if (iou(box, selected) > config.nmsThreshold) {
                 suppressed = true;
                 break;
             }

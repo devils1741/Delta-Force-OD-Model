@@ -1,5 +1,6 @@
 #include "TensorRtDetector.h"
 
+#include "AppConfig.h"
 #include "Detection.h"
 
 #include <NvInferPlugin.h>
@@ -145,8 +146,13 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
     if (!config) {
         throw std::runtime_error("Failed to create TensorRT builder config");
     }
-    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30);
-    config->setFlag(nvinfer1::BuilderFlag::kFP16);
+    auto const& trt = AppConfig::instance().tensorrt();
+    config->setMemoryPoolLimit(
+        nvinfer1::MemoryPoolType::kWORKSPACE,
+        static_cast<size_t>(trt.workspaceMb) * 1024ULL * 1024ULL);
+    if (trt.fp16) {
+        config->setFlag(nvinfer1::BuilderFlag::kFP16);
+    }
 
     TrtUniquePtr<nvinfer1::IHostMemory> serialized(builder->buildSerializedNetwork(*network, *config));
     if (!serialized) {
