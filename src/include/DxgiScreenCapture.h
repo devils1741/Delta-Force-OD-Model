@@ -17,7 +17,7 @@ struct cudaGraphicsResource;
 
 class DxgiScreenCapture {
 public:
-    DxgiScreenCapture();
+    DxgiScreenCapture(int inputW, int inputH);
     ~DxgiScreenCapture();
 
     DxgiScreenCapture(DxgiScreenCapture const&) = delete;
@@ -37,6 +37,8 @@ private:
 
     int screenW_{};
     int screenH_{};
+    int inputW_{};
+    int inputH_{};
     LetterboxInfo letterbox_{};
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;

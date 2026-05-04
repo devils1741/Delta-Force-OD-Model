@@ -39,6 +39,17 @@ void writeFile(fs::path const& path, void const* data, size_t size) {
     file.write(static_cast<char const*>(data), static_cast<std::streamsize>(size));
 }
 
+size_t volume(nvinfer1::Dims const& dims) {
+    size_t count = 1;
+    for (int i = 0; i < dims.nbDims; ++i) {
+        if (dims.d[i] < 0) {
+            throw std::runtime_error("Dynamic TensorRT tensor shapes are not configured");
+        }
+        count *= static_cast<size_t>(dims.d[i]);
+    }
+    return count;
+}
+
 } // namespace
 
 void TrtLogger::log(Severity severity, char const* msg) noexcept {
@@ -62,9 +73,9 @@ TensorRtDetector::TensorRtDetector(fs::path const& onnxPath, fs::path const& cac
     }
 
     discoverTensors();
+    discoverTensorShapes();
 
-    inputBytes_ = 3ULL * kInputW * kInputH * sizeof(float);
-    outputCount_ = 300ULL * 6ULL;
+    inputBytes_ = 3ULL * static_cast<size_t>(inputW_) * static_cast<size_t>(inputH_) * sizeof(float);
     outputBytes_ = outputCount_ * sizeof(float);
     output_.resize(outputCount_);
 
@@ -110,7 +121,7 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         throw std::runtime_error("Failed to create TensorRT runtime");
     }
 
-    if (fs::exists(cachePath)) {
+    if (fs::exists(cachePath) && fs::last_write_time(cachePath) >= fs::last_write_time(onnxPath)) {
         auto bytes = readFile(cachePath);
         if (auto* engine = runtime->deserializeCudaEngine(bytes.data(), bytes.size())) {
             std::cout << "Loaded TensorRT engine cache: " << cachePath << '\n';
@@ -118,6 +129,8 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
             return;
         }
         std::cerr << "Engine cache is incompatible, rebuilding from ONNX.\n";
+    } else if (fs::exists(cachePath)) {
+        std::cerr << "Engine cache is older than ONNX, rebuilding from ONNX.\n";
     }
 
     std::cout << "Building TensorRT engine from ONNX. First launch may take a while...\n";
@@ -182,4 +195,37 @@ void TensorRtDetector::discoverTensors() {
     }
     std::cout << "Input tensor: " << inputName_ << '\n';
     std::cout << "Output tensor: " << outputName_ << '\n';
+}
+
+void TensorRtDetector::discoverTensorShapes() {
+    auto inputDims = engine_->getTensorShape(inputName_.c_str());
+    auto outputDims = engine_->getTensorShape(outputName_.c_str());
+
+    if (inputDims.nbDims != 4 || inputDims.d[0] != 1 || inputDims.d[1] != 3) {
+        throw std::runtime_error("Expected input shape [1, 3, H, W]");
+    }
+
+    inputH_ = static_cast<int>(inputDims.d[2]);
+    inputW_ = static_cast<int>(inputDims.d[3]);
+    outputCount_ = volume(outputDims);
+
+    auto const& model = AppConfig::instance().model();
+    if (model.inputWidth != inputW_ || model.inputHeight != inputH_) {
+        throw std::runtime_error(
+            "Configured model input size does not match TensorRT engine. config=" +
+            std::to_string(model.inputWidth) + "x" + std::to_string(model.inputHeight) +
+            ", engine=" + std::to_string(inputW_) + "x" + std::to_string(inputH_));
+    }
+
+    std::cout << "Input shape: [";
+    for (int i = 0; i < inputDims.nbDims; ++i) {
+        std::cout << (i ? ", " : "") << inputDims.d[i];
+    }
+    std::cout << "]\n";
+
+    std::cout << "Output shape: [";
+    for (int i = 0; i < outputDims.nbDims; ++i) {
+        std::cout << (i ? ", " : "") << outputDims.d[i];
+    }
+    std::cout << "]\n";
 }

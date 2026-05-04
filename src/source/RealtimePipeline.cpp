@@ -1,11 +1,14 @@
 #include "RealtimePipeline.h"
 
+#include "AppConfig.h"
+
 #include <algorithm>
 #include <utility>
 
 LatestFrameQueue::LatestFrameQueue() {
+    auto const& model = AppConfig::instance().model();
     for (auto& slot : slots_) {
-        slot.resize(3 * kInputW * kInputH);
+        slot.resize(3 * model.inputWidth * model.inputHeight);
     }
 }
 

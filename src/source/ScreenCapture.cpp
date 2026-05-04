@@ -1,5 +1,6 @@
 #include "ScreenCapture.h"
 
+#include "AppConfig.h"
 #include "Detection.h"
 
 #include <algorithm>
@@ -8,6 +9,9 @@
 #include <stdexcept>
 
 ScreenCapture::ScreenCapture() {
+    int const inputW = AppConfig::instance().model().inputWidth;
+    int const inputH = AppConfig::instance().model().inputHeight;
+
     DEVMODEW mode{};
     mode.dmSize = sizeof(mode);
     if (EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode)) {
@@ -18,6 +22,8 @@ ScreenCapture::ScreenCapture() {
         screenH_ = GetSystemMetrics(SM_CYSCREEN);
     }
 
+    letterbox_.inputW = inputW;
+    letterbox_.inputH = inputH;
     letterbox_.screenW = screenW_;
     letterbox_.screenH = screenH_;
     letterbox_.captureX = 0;
@@ -25,12 +31,12 @@ ScreenCapture::ScreenCapture() {
     letterbox_.captureW = screenW_;
     letterbox_.captureH = screenH_;
     letterbox_.scale = std::min(
-        static_cast<float>(kInputW) / static_cast<float>(letterbox_.captureW),
-        static_cast<float>(kInputH) / static_cast<float>(letterbox_.captureH));
+        static_cast<float>(inputW) / static_cast<float>(letterbox_.captureW),
+        static_cast<float>(inputH) / static_cast<float>(letterbox_.captureH));
     letterbox_.resizedW = std::max(1, static_cast<int>(std::round(letterbox_.captureW * letterbox_.scale)));
     letterbox_.resizedH = std::max(1, static_cast<int>(std::round(letterbox_.captureH * letterbox_.scale)));
-    letterbox_.padX = (kInputW - letterbox_.resizedW) / 2;
-    letterbox_.padY = (kInputH - letterbox_.resizedH) / 2;
+    letterbox_.padX = (inputW - letterbox_.resizedW) / 2;
+    letterbox_.padY = (inputH - letterbox_.resizedH) / 2;
 
     screenDc_ = GetDC(nullptr);
     memDc_ = CreateCompatibleDC(screenDc_);
@@ -38,8 +44,8 @@ ScreenCapture::ScreenCapture() {
     oldBitmap_ = static_cast<HBITMAP>(SelectObject(memDc_, bitmap_));
 
     screenPixels_.resize(screenW_ * screenH_ * 4);
-    pixels_.resize(kInputW * kInputH * 4);
-    input_.resize(3 * kInputW * kInputH);
+    pixels_.resize(inputW * inputH * 4);
+    input_.resize(3 * inputW * inputH);
 
     ZeroMemory(&screenBmi_, sizeof(screenBmi_));
     screenBmi_.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -51,8 +57,8 @@ ScreenCapture::ScreenCapture() {
 
     ZeroMemory(&bmi_, sizeof(bmi_));
     bmi_.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi_.bmiHeader.biWidth = kInputW;
-    bmi_.bmiHeader.biHeight = -kInputH;
+    bmi_.bmiHeader.biWidth = inputW;
+    bmi_.bmiHeader.biHeight = -inputH;
     bmi_.bmiHeader.biPlanes = 1;
     bmi_.bmiHeader.biBitCount = 32;
     bmi_.bmiHeader.biCompression = BI_RGB;
@@ -96,17 +102,17 @@ float* ScreenCapture::captureToTensor() {
                 screenW_ - 1);
             int dstX = x + letterbox_.padX;
             std::memcpy(
-                &pixels_[(dstY * kInputW + dstX) * 4],
+                &pixels_[(dstY * letterbox_.inputW + dstX) * 4],
                 &screenPixels_[(srcY * screenW_ + srcX) * 4],
                 4);
         }
     }
 
-    auto plane = kInputW * kInputH;
-    for (int y = 0; y < kInputH; ++y) {
-        for (int x = 0; x < kInputW; ++x) {
-            int src = (y * kInputW + x) * 4;
-            int dst = y * kInputW + x;
+    auto plane = letterbox_.inputW * letterbox_.inputH;
+    for (int y = 0; y < letterbox_.inputH; ++y) {
+        for (int x = 0; x < letterbox_.inputW; ++x) {
+            int src = (y * letterbox_.inputW + x) * 4;
+            int dst = y * letterbox_.inputW + x;
             input_[dst] = pixels_[src + 2] / 255.0f;
             input_[plane + dst] = pixels_[src + 1] / 255.0f;
             input_[2 * plane + dst] = pixels_[src + 0] / 255.0f;

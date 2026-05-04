@@ -2,9 +2,6 @@
 
 #include <vector>
 
-constexpr int kInputW = 640;
-constexpr int kInputH = 640;
-
 struct Box {
     float x1{};
     float y1{};
@@ -14,6 +11,8 @@ struct Box {
 };
 
 struct LetterboxInfo {
+    int inputW{};
+    int inputH{};
     int screenW{};
     int screenH{};
     int captureX{};

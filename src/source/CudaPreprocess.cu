@@ -8,16 +8,18 @@ __global__ void preprocessKernel(
     cudaTextureObject_t texture,
     int sourceW,
     int sourceH,
+    int inputW,
+    int inputH,
     LetterboxInfo letterbox,
     float* output) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= kInputW || y >= kInputH) {
+    if (x >= inputW || y >= inputH) {
         return;
     }
 
-    int dst = y * kInputW + x;
-    int plane = kInputW * kInputH;
+    int dst = y * inputW + x;
+    int plane = inputW * inputH;
     float r = 114.0f / 255.0f;
     float g = 114.0f / 255.0f;
     float b = 114.0f / 255.0f;
@@ -47,6 +49,8 @@ cudaError_t launchDxgiPreprocess(
     cudaArray_t source,
     int sourceW,
     int sourceH,
+    int inputW,
+    int inputH,
     LetterboxInfo letterbox,
     float* output,
     cudaStream_t stream) {
@@ -68,8 +72,8 @@ cudaError_t launchDxgiPreprocess(
     }
 
     dim3 block(16, 16);
-    dim3 grid((kInputW + block.x - 1) / block.x, (kInputH + block.y - 1) / block.y);
-    preprocessKernel<<<grid, block, 0, stream>>>(texture, sourceW, sourceH, letterbox, output);
+    dim3 grid((inputW + block.x - 1) / block.x, (inputH + block.y - 1) / block.y);
+    preprocessKernel<<<grid, block, 0, stream>>>(texture, sourceW, sourceH, inputW, inputH, letterbox, output);
     status = cudaGetLastError();
 
     cudaError_t destroyStatus = cudaDestroyTextureObject(texture);

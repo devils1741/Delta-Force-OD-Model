@@ -27,6 +27,8 @@ public:
     cudaStream_t stream() const { return stream_; }
     std::string const& inputName() const { return inputName_; }
     std::string const& outputName() const { return outputName_; }
+    int inputW() const { return inputW_; }
+    int inputH() const { return inputH_; }
 
 private:
     struct CudaDeleter {
@@ -37,12 +39,15 @@ private:
 
     void buildOrLoadEngine(std::filesystem::path const& onnxPath, std::filesystem::path const& cachePath);
     void discoverTensors();
+    void discoverTensorShapes();
 
     TrtLogger logger_;
     std::unique_ptr<nvinfer1::ICudaEngine> engine_;
     std::unique_ptr<nvinfer1::IExecutionContext> context_;
     std::string inputName_;
     std::string outputName_;
+    int inputW_{};
+    int inputH_{};
     CudaPtr deviceInput_;
     CudaPtr deviceOutput_;
     cudaStream_t stream_{};

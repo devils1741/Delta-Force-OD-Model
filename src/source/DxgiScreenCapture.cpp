@@ -30,12 +30,14 @@ void checkCuda(cudaError_t status, char const* what) {
     }
 }
 
-LetterboxInfo makeLetterbox(int screenW, int screenH) {
+LetterboxInfo makeLetterbox(int screenW, int screenH, int inputW, int inputH) {
     auto const& capture = AppConfig::instance().capture();
     int captureW = std::min(capture.roiWidth, screenW);
     int captureH = std::min(capture.roiHeight, screenH);
 
     LetterboxInfo info{};
+    info.inputW = inputW;
+    info.inputH = inputH;
     info.screenW = screenW;
     info.screenH = screenH;
     info.captureX = (screenW - captureW) / 2;
@@ -43,18 +45,20 @@ LetterboxInfo makeLetterbox(int screenW, int screenH) {
     info.captureW = captureW;
     info.captureH = captureH;
     info.scale = std::min(
-        static_cast<float>(kInputW) / static_cast<float>(captureW),
-        static_cast<float>(kInputH) / static_cast<float>(captureH));
+        static_cast<float>(inputW) / static_cast<float>(captureW),
+        static_cast<float>(inputH) / static_cast<float>(captureH));
     info.resizedW = std::max(1, static_cast<int>(std::round(captureW * info.scale)));
     info.resizedH = std::max(1, static_cast<int>(std::round(captureH * info.scale)));
-    info.padX = (kInputW - info.resizedW) / 2;
-    info.padY = (kInputH - info.resizedH) / 2;
+    info.padX = (inputW - info.resizedW) / 2;
+    info.padY = (inputH - info.resizedH) / 2;
     return info;
 }
 
 } // namespace
 
-DxgiScreenCapture::DxgiScreenCapture() {
+DxgiScreenCapture::DxgiScreenCapture(int inputW, int inputH)
+    : inputW_(inputW),
+      inputH_(inputH) {
     initD3d();
     initDuplication();
     initCudaTexture();
@@ -103,6 +107,8 @@ bool DxgiScreenCapture::captureToDevice(float* deviceInput, cudaStream_t stream)
             source,
             letterbox_.captureW,
             letterbox_.captureH,
+            inputW_,
+            inputH_,
             letterbox_,
             deviceInput,
             stream);
@@ -150,7 +156,7 @@ void DxgiScreenCapture::initDuplication() {
     checkHr(output->GetDesc(&desc), "IDXGIOutput::GetDesc");
     screenW_ = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
     screenH_ = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
-    letterbox_ = makeLetterbox(screenW_, screenH_);
+    letterbox_ = makeLetterbox(screenW_, screenH_, inputW_, inputH_);
 
     ComPtr<IDXGIOutput1> output1;
     checkHr(output.As(&output1), "Query IDXGIOutput1");

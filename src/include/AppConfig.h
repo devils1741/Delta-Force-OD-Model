@@ -5,6 +5,8 @@
 struct ModelConfig {
     std::filesystem::path onnxPath{"weights/best.onnx"};
     std::filesystem::path enginePath{"weights/best_640_trt10_16_sm89_fp16.engine"};
+    int inputWidth{640};
+    int inputHeight{640};
 };
 
 struct InferenceConfig {

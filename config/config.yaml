@@ -1,9 +1,11 @@
 model:
   onnx_path: weights/best.onnx
-  engine_path: weights/best_640_trt10_16_sm89_fp16.engine
+  engine_path: weights/best.engine
+  input_width: 960
+  input_height: 960
 
 inference:
-  target_fps: 60
+  target_fps: 120
   score_threshold: 0.30
   nms_threshold: 0.45
   max_detections: 300

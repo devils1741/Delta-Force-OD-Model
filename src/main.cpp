@@ -73,7 +73,7 @@ int main() {
 
         TensorRtDetector detector(onnxPath, enginePath);
 
-        DxgiScreenCapture capture;
+        DxgiScreenCapture capture(detector.inputW(), detector.inputH());
         std::cout << "Primary display: " << capture.screenW() << "x" << capture.screenH() << '\n';
         std::cout << "Letterbox resize: " << capture.letterbox().resizedW << "x"
                   << capture.letterbox().resizedH << ", pad=(" << capture.letterbox().padX

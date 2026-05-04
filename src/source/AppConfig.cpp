@@ -46,6 +46,8 @@ void AppConfig::load(fs::path const& path) {
     auto model = root["model"];
     model_.onnxPath = resolvePath(projectDir, fs::path(readOr(model, "onnx_path", model_.onnxPath.string())));
     model_.enginePath = resolvePath(projectDir, fs::path(readOr(model, "engine_path", model_.enginePath.string())));
+    model_.inputWidth = readOr(model, "input_width", model_.inputWidth);
+    model_.inputHeight = readOr(model, "input_height", model_.inputHeight);
 
     auto inference = root["inference"];
     inference_.targetFps = readOr(inference, "target_fps", inference_.targetFps);
@@ -62,6 +64,8 @@ void AppConfig::load(fs::path const& path) {
     tensorrt_.fp16 = readOr(tensorrt, "fp16", tensorrt_.fp16);
     tensorrt_.workspaceMb = readOr(tensorrt, "workspace_mb", tensorrt_.workspaceMb);
 
+    validatePositive("model.input_width", model_.inputWidth);
+    validatePositive("model.input_height", model_.inputHeight);
     validatePositive("inference.target_fps", inference_.targetFps);
     validatePositive("inference.max_detections", inference_.maxDetections);
     validatePositive("capture.roi_width", capture_.roiWidth);

@@ -36,10 +36,10 @@ std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo co
         }
 
         if (std::max({std::fabs(a), std::fabs(b), std::fabs(c), std::fabs(d)}) <= 2.0f) {
-            a *= kInputW;
-            c *= kInputW;
-            b *= kInputH;
-            d *= kInputH;
+            a *= letterbox.inputW;
+            c *= letterbox.inputW;
+            b *= letterbox.inputH;
+            d *= letterbox.inputH;
         }
 
         float x1 = std::min(a, c);

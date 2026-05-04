@@ -1,5 +1,7 @@
 #include "PreviewWindow.h"
 
+#include "AppConfig.h"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -17,6 +19,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 HWND createPreviewWindow(HINSTANCE instance) {
+    auto const& model = AppConfig::instance().model();
     WNDCLASSW wc{};
     wc.lpfnWndProc = wndProc;
     wc.hInstance = instance;
@@ -24,7 +27,7 @@ HWND createPreviewWindow(HINSTANCE instance) {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     RegisterClassW(&wc);
 
-    RECT rect{0, 0, kInputW, kInputH};
+    RECT rect{0, 0, model.inputWidth, model.inputHeight};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
     HWND hwnd = CreateWindowExW(
         0, wc.lpszClassName, L"TensorRT person detector - ESC to exit",
@@ -47,14 +50,14 @@ void drawPreview(HWND hwnd, ScreenCapture const& capture, std::vector<Box> const
     int viewSize = std::max(1, std::min(clientW, clientH));
     int viewX = (clientW - viewSize) / 2;
     int viewY = (clientH - viewSize) / 2;
-    float viewScale = static_cast<float>(viewSize) / static_cast<float>(kInputW);
+    float viewScale = static_cast<float>(viewSize) / static_cast<float>(capture.letterbox().inputW);
 
     HBRUSH background = CreateSolidBrush(RGB(0, 0, 0));
     FillRect(dc, &client, background);
     DeleteObject(background);
 
     StretchDIBits(
-        dc, viewX, viewY, viewSize, viewSize, 0, 0, kInputW, kInputH,
+        dc, viewX, viewY, viewSize, viewSize, 0, 0, capture.letterbox().inputW, capture.letterbox().inputH,
         capture.pixels().data(), &capture.bmi(), DIB_RGB_COLORS, SRCCOPY);
 
     HPEN pen = CreatePen(PS_SOLID, 3, RGB(0, 255, 0));
