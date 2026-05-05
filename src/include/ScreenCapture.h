@@ -9,20 +9,67 @@
 
 #include "Detection.h"
 
+/**
+ * @brief 基于 GDI 的 CPU 屏幕采集器。
+ *
+ * 采集屏幕并在 CPU 上完成 letterbox、BGRA 到 RGB、归一化和 CHW 排布。
+ */
 class ScreenCapture {
 public:
+    /**
+     * @brief 创建屏幕采集器并分配像素和输入张量缓冲区。
+     * @note 无返回值。
+     */
     ScreenCapture();
+    /**
+     * @brief 释放 GDI 资源。
+     * @note 无返回值。
+     */
     ~ScreenCapture();
 
-    ScreenCapture(ScreenCapture const&) = delete;
-    ScreenCapture& operator=(ScreenCapture const&) = delete;
+    /**
+     * @brief 禁止复制构造采集器。
+     * @param other 另一个采集器对象。
+     * @note 无返回值。
+     */
+    ScreenCapture(ScreenCapture const& other) = delete;
+    /**
+     * @brief 禁止复制赋值采集器。
+     * @param other 另一个采集器对象。
+     * @return 当前对象引用。
+     */
+    ScreenCapture& operator=(ScreenCapture const& other) = delete;
 
+    /**
+     * @brief 采集屏幕并转换为模型输入张量。
+     * @return 指向内部 RGB CHW 浮点输入张量的指针。
+     */
     float* captureToTensor();
 
+    /**
+     * @brief 获取 letterbox 后的 BGRA 像素。
+     * @return 像素缓冲区的只读引用。
+     */
     std::vector<uint8_t> const& pixels() const { return pixels_; }
+    /**
+     * @brief 获取预览图像的 BITMAPINFO。
+     * @return BITMAPINFO 的只读引用。
+     */
     BITMAPINFO const& bmi() const { return bmi_; }
+    /**
+     * @brief 获取屏幕宽度。
+     * @return 屏幕宽度，单位为像素。
+     */
     int screenW() const { return screenW_; }
+    /**
+     * @brief 获取屏幕高度。
+     * @return 屏幕高度，单位为像素。
+     */
     int screenH() const { return screenH_; }
+    /**
+     * @brief 获取当前 letterbox 参数。
+     * @return letterbox 信息的只读引用。
+     */
     LetterboxInfo const& letterbox() const { return letterbox_; }
 
 private:

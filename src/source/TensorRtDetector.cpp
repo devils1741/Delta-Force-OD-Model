@@ -17,12 +17,23 @@ namespace {
 template <typename T>
 using TrtUniquePtr = std::unique_ptr<T>;
 
+/**
+ * @brief 检查CUDA状态并在失败时抛出异常。
+ * @param status CUDA API返回状态。
+ * @param what 当前操作名称。
+ * @note 无返回值。
+ */
 void checkCuda(cudaError_t status, char const* what) {
     if (status != cudaSuccess) {
         throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(status));
     }
 }
 
+/**
+ * @brief 以二进制方式读取整个文件。
+ * @param path 文件路径。
+ * @return 文件内容字节数组。
+ */
 std::vector<char> readFile(fs::path const& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -31,6 +42,13 @@ std::vector<char> readFile(fs::path const& path) {
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
+/**
+ * @brief 以二进制方式写入文件。
+ * @param path 文件路径。
+ * @param data 需要写入的数据指针。
+ * @param size 需要写入的字节数。
+ * @note 无返回值。
+ */
 void writeFile(fs::path const& path, void const* data, size_t size) {
     std::ofstream file(path, std::ios::binary);
     if (!file) {
@@ -39,6 +57,11 @@ void writeFile(fs::path const& path, void const* data, size_t size) {
     file.write(static_cast<char const*>(data), static_cast<std::streamsize>(size));
 }
 
+/**
+ * @brief 计算TensorRT维度中的元素总数。
+ * @param dims TensorRT张量维度。
+ * @return 张量元素数量。
+ */
 size_t volume(nvinfer1::Dims const& dims) {
     size_t count = 1;
     for (int i = 0; i < dims.nbDims; ++i) {
@@ -64,7 +87,7 @@ void TensorRtDetector::CudaDeleter::operator()(void* ptr) const {
     }
 }
 
-TensorRtDetector::TensorRtDetector(fs::path const& onnxPath, fs::path const& cachePath) {
+TensorRtDetector::TensorRtDetector(std::filesystem::path const& onnxPath, std::filesystem::path const& cachePath) {
     initLibNvInferPlugins(&logger_, "");
     buildOrLoadEngine(onnxPath, cachePath);
     context_.reset(engine_->createExecutionContext());
@@ -166,7 +189,6 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
     if (trt.fp16) {
         config->setFlag(nvinfer1::BuilderFlag::kFP16);
     }
-
     TrtUniquePtr<nvinfer1::IHostMemory> serialized(builder->buildSerializedNetwork(*network, *config));
     if (!serialized) {
         throw std::runtime_error("Failed to build TensorRT engine");

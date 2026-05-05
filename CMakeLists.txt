@@ -76,3 +76,21 @@ foreach(tensorrt_dll IN ITEMS
             "${TENSORRT_ROOT}/bin/${tensorrt_dll}"
             "$<TARGET_FILE_DIR:delta>/${tensorrt_dll}")
 endforeach()
+
+find_package(Doxygen QUIET)
+
+if (DOXYGEN_FOUND)
+    set(DOXYGEN_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/docs")
+    configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
+            @ONLY)
+
+    add_custom_target(docs
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Generate API documentation with Doxygen"
+            VERBATIM)
+else()
+    message(STATUS "Doxygen not found; install Doxygen to enable the docs target.")
+endif()

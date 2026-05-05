@@ -7,6 +7,12 @@
 
 namespace {
 
+/**
+ * @brief 计算两个检测框的交并比。
+ * @param a 第一个检测框。
+ * @param b 第二个检测框。
+ * @return 两个检测框的 IoU 值。
+ */
 float iou(Box const& a, Box const& b) {
     float x1 = std::max(a.x1, b.x1);
     float y1 = std::max(a.y1, b.y1);

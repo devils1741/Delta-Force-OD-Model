@@ -6,6 +6,14 @@
 
 namespace {
 
+/**
+ * @brief 透明覆盖窗口的 Windows 消息过程。
+ * @param hwnd 接收消息的窗口句柄。
+ * @param msg Windows 消息编号。
+ * @param wParam 消息的附加参数。
+ * @param lParam 消息的附加参数。
+ * @return 消息处理结果。
+ */
 LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_DESTROY) {
         PostQuitMessage(0);

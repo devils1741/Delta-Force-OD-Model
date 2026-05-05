@@ -2,6 +2,8 @@
 cmake-build-*/
 build/
 out/
+docs/html/
+docs/latex/
 
 # Model weights and generated engines
 weights/

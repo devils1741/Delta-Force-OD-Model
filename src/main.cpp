@@ -25,6 +25,10 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
+/**
+ * @brief 启用进程 DPI 感知，避免高 DPI 屏幕下坐标缩放错误。
+ * @note 无返回值。
+ */
 void enableDpiAwareness() {
     using SetDpiAwarenessContextFn = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT);
     auto* user32 = GetModuleHandleW(L"user32.dll");
@@ -40,6 +44,10 @@ void enableDpiAwareness() {
     SetProcessDPIAware();
 }
 
+/**
+ * @brief 在常见运行目录中查找配置文件。
+ * @return 配置文件的绝对路径。
+ */
 fs::path findConfigFile() {
     for (auto const& candidate : {
              fs::path("config/config.yaml"),
@@ -56,6 +64,10 @@ fs::path findConfigFile() {
 
 } // namespace
 
+/**
+ * @brief 程序入口，启动配置加载、TensorRT 推理、DXGI 采集和覆盖窗口绘制。
+ * @return 0 表示正常退出；1 表示发生异常并已提示错误。
+ */
 int main() {
     try {
         std::cout << std::unitbuf;
