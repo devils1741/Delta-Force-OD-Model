@@ -12,12 +12,12 @@ namespace {
 
 template <typename T>
 /**
- * @brief 从 YAML 节点读取指定键，缺失时返回默认值。
- * @tparam T 需要读取的目标类型。
- * @param node YAML 节点。
+ * @brief 从YAML节点读取指定键，缺失时返回默认值。
+ * @tparam T需要读取的目标类型。
+ * @param node YAML节点。
  * @param key 需要读取的键名。
  * @param fallback 键不存在时使用的默认值。
- * @return YAML 中的配置值，或 fallback 默认值。
+ * @return YAML中的配置值，或fallback默认值。
  */
 T readOr(YAML::Node const& node, char const* key, T fallback) {
     if (!node || !node[key]) {

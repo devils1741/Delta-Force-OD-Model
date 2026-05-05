@@ -18,8 +18,8 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 /**
- * @brief 检查 HRESULT 并在失败时抛出异常。
- * @param hr Windows API 返回的 HRESULT。
+ * @brief 检查HRESULT并在失败时抛出异常。
+ * @param hr Windows API返回的HRESULT。
  * @param what 当前操作名称。
  * @note 无返回值。
  */
@@ -31,8 +31,8 @@ void checkHr(HRESULT hr, char const* what) {
 }
 
 /**
- * @brief 检查 CUDA 状态并在失败时抛出异常。
- * @param status CUDA API 返回状态。
+ * @brief 检查CUDA状态并在失败时抛出异常。
+ * @param status CUDA API返回状态。
  * @param what 当前操作名称。
  * @note 无返回值。
  */
@@ -43,12 +43,12 @@ void checkCuda(cudaError_t status, char const* what) {
 }
 
 /**
- * @brief 根据屏幕尺寸和模型输入尺寸计算中心 ROI 的 letterbox 参数。
+ * @brief 根据屏幕尺寸和模型输入尺寸计算中心ROI的letterbox参数。
  * @param screenW 屏幕宽度。
  * @param screenH 屏幕高度。
  * @param inputW 模型输入宽度。
  * @param inputH 模型输入高度。
- * @return 完整的 letterbox 映射信息。
+ * @return 完整的letterbox映射信息。
  */
 LetterboxInfo makeLetterbox(int screenW, int screenH, int inputW, int inputH) {
     auto const& capture = AppConfig::instance().capture();

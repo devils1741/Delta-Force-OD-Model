@@ -26,7 +26,7 @@ using Clock = std::chrono::steady_clock;
 namespace {
 
 /**
- * @brief 启用进程 DPI 感知，避免高 DPI 屏幕下坐标缩放错误。
+ * @brief 启用进程DPI感知，避免高DPI屏幕下坐标缩放错误。
  * @note 无返回值。
  */
 void enableDpiAwareness() {
@@ -65,8 +65,8 @@ fs::path findConfigFile() {
 } // namespace
 
 /**
- * @brief 程序入口，启动配置加载、TensorRT 推理、DXGI 采集和覆盖窗口绘制。
- * @return 0 表示正常退出；1 表示发生异常并已提示错误。
+ * @brief 程序入口，启动配置加载、TensorRT推理、DXGI采集和覆盖窗口绘制。
+ * @return 0表示正常退出；1表示发生异常并已提示错误。
  */
 int main() {
     try {

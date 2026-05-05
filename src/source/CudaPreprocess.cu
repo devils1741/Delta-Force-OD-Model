@@ -5,14 +5,14 @@
 namespace {
 
 /**
- * @brief 将 BGRA CUDA 纹理预处理为 RGB CHW 浮点输入张量。
- * @param texture CUDA 纹理对象，来源为 DXGI ROI。
- * @param sourceW 源 ROI 宽度。
- * @param sourceH 源 ROI 高度。
+ * @brief 将BGRA CUDA纹理预处理为RGB CHW浮点输入张量。
+ * @param texture CUDA纹理对象，来源为DXGI ROI。
+ * @param sourceW 源ROI宽度。
+ * @param sourceH 源ROI高度。
  * @param inputW 模型输入宽度。
  * @param inputH 模型输入高度。
- * @param letterbox letterbox 缩放和填充信息。
- * @param output GPU 输出张量指针。
+ * @param letterbox letterbox缩放和填充信息。
+ * @param output GPU输出张量指针。
  * @note 无返回值。
  */
 __global__ void preprocessKernel(

@@ -16,7 +16,7 @@ struct Box {
 };
 
 /**
- * @brief Letterbox 缩放和坐标映射信息。
+ * @brief Letterbox缩放和坐标映射信息。
  *
  * 保存屏幕ROI到模型输入尺寸之间的缩放、填充和反变换参数。
  */
@@ -38,8 +38,8 @@ struct LetterboxInfo {
 
 /**
  * @brief 解码模型输出并执行非极大值抑制。
- * @param output TensorRT 输出缓冲区，按每个候选框 6 个浮点值组织。
- * @param letterbox 模型输入和屏幕坐标之间的 letterbox 映射信息。
- * @return 经过置信度过滤、坐标还原和 NMS 后的检测框列表。
+ * @param output TensorRT输出缓冲区，按每个候选框6个浮点值组织。
+ * @param letterbox 模型输入和屏幕坐标之间的letterbox映射信息。
+ * @return 经过置信度过滤、坐标还原和NMS后的检测框列表。
  */
 std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo const& letterbox);

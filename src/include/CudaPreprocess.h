@@ -14,7 +14,7 @@
  * @param letterbox ROI到模型输入的letterbox参数。
  * @param output 输出到GPU的RGB CHW浮点张量指针。
  * @param stream 执行kernel的CUDA stream。
- * @return CUDA 调用状态，cudaSuccess表示成功。
+ * @return CUDA调用状态，cudaSuccess表示成功。
  */
 cudaError_t launchDxgiPreprocess(
     cudaArray_t source,

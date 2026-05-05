@@ -42,7 +42,7 @@ public:
     /**
      * @brief 等待并取出最新帧。
      * @param frame 输出参数，接收最新帧槽位、序列号和数据指针。
-     * @return 成功取到帧时返回 true；队列停止且没有待处理帧时返回 false。
+     * @return 成功取到帧时返回true；队列停止且没有待处理帧时返回false。
      */
     bool waitLatest(LatestFrame& frame);
     /**
@@ -90,7 +90,7 @@ public:
      * @brief 获取检测框快照。
      * @param lastSequence 调用方持有的上次序列号，函数会在有更新时写入新序列号。
      * @param boxes 输出参数，接收最新检测框。
-     * @return 有新检测结果时返回 true；序列号未变化时返回 false。
+     * @return 有新检测结果时返回true；序列号未变化时返回false。
      */
     bool snapshot(uint64_t& lastSequence, std::vector<Box>& boxes);
 

@@ -83,8 +83,8 @@ public:
      */
     CaptureConfig const& capture() const { return capture_; }
     /**
-     * @brief 获取 TensorRT 配置。
-     * @return TensorRT 配置的只读引用。
+     * @brief 获取TensorRT配置。
+     * @return TensorRT配置的只读引用。
      */
     TensorRtConfig const& tensorrt() const { return tensorrt_; }
 

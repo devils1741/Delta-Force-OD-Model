@@ -51,7 +51,7 @@ public:
     /**
      * @brief 采集一帧屏幕并写入GPU输入张量。
      * @param deviceInput GPU上的模型输入张量指针。
-     * @param stream 用于CUDA预处理的 stream。
+     * @param stream 用于CUDA预处理的stream。
      * @return 捕获到新帧并完成预处理时返回true；无新帧或重建采集资源时返回false。
      */
     bool captureToDevice(float* deviceInput, cudaStream_t stream);
@@ -67,24 +67,24 @@ public:
      */
     int screenH() const { return screenH_; }
     /**
-     * @brief 获取当前 letterbox 参数。
-     * @return letterbox 信息的只读引用。
+     * @brief 获取当前letterbox参数。
+     * @return letterbox信息的只读引用。
      */
     LetterboxInfo const& letterbox() const { return letterbox_; }
 
 private:
     /**
-     * @brief 初始化 D3D11 设备和上下文。
+     * @brief 初始化D3D11设备和上下文。
      * @note 无返回值。
      */
     void initD3d();
     /**
-     * @brief 初始化 DXGI 输出复制接口并计算采集 ROI。
+     * @brief 初始化DXGI输出复制接口并计算采集ROI。
      * @note 无返回值。
      */
     void initDuplication();
     /**
-     * @brief 创建可被 CUDA 映射的 D3D11 纹理。
+     * @brief 创建可被CUDA映射的D3D11纹理。
      * @note 无返回值。
      */
     void initCudaTexture();

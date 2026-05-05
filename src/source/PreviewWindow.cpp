@@ -9,9 +9,9 @@
 namespace {
 
 /**
- * @brief 预览窗口的 Windows 消息过程。
+ * @brief 预览窗口的Windows消息过程。
  * @param hwnd 接收消息的窗口句柄。
- * @param msg Windows 消息编号。
+ * @param msg Windows消息编号。
  * @param wParam 消息的附加参数。
  * @param lParam 消息的附加参数。
  * @return 消息处理结果。
