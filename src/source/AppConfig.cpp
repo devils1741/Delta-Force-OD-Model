@@ -72,7 +72,6 @@ void AppConfig::load(fs::path const& path) {
     auto inference = root["inference"];
     inference_.targetFps = readOr(inference, "target_fps", inference_.targetFps);
     inference_.scoreThreshold = readOr(inference, "score_threshold", inference_.scoreThreshold);
-    inference_.nmsThreshold = readOr(inference, "nms_threshold", inference_.nmsThreshold);
     inference_.maxDetections = readOr(inference, "max_detections", inference_.maxDetections);
 
     auto capture = root["capture"];
@@ -82,6 +81,10 @@ void AppConfig::load(fs::path const& path) {
 
     auto tensorrt = root["tensorrt"];
     tensorrt_.fp16 = readOr(tensorrt, "fp16", tensorrt_.fp16);
+    tensorrt_.int8 = readOr(tensorrt, "int8", tensorrt_.int8);
+    tensorrt_.calibrationCachePath = resolvePath(
+        projectDir,
+        fs::path(readOr(tensorrt, "calibration_cache", tensorrt_.calibrationCachePath.string())));
     tensorrt_.workspaceMb = readOr(tensorrt, "workspace_mb", tensorrt_.workspaceMb);
 
     validatePositive("model.input_width", model_.inputWidth);
@@ -96,5 +99,4 @@ void AppConfig::load(fs::path const& path) {
     }
 
     inference_.scoreThreshold = std::clamp(inference_.scoreThreshold, 0.0f, 1.0f);
-    inference_.nmsThreshold = std::clamp(inference_.nmsThreshold, 0.0f, 1.0f);
 }

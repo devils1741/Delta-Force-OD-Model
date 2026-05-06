@@ -37,9 +37,9 @@ struct LetterboxInfo {
 };
 
 /**
- * @brief 解码模型输出并执行非极大值抑制。
+ * @brief 解码端到端模型输出。
  * @param output TensorRT输出缓冲区，按每个候选框6个浮点值组织。
  * @param letterbox 模型输入和屏幕坐标之间的letterbox映射信息。
- * @return 经过置信度过滤、坐标还原和NMS后的检测框列表。
+ * @return 经过置信度过滤和坐标还原后的检测框列表。
  */
-std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo const& letterbox);
+std::vector<Box> decodeDetections(std::vector<float> const& output, LetterboxInfo const& letterbox);

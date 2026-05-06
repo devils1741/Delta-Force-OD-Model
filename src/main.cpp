@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include "AppConfig.h"
+#include "CudaPostprocess.h"
 #include "Detection.h"
 #include "DxgiScreenCapture.h"
 #include "OverlayWindow.h"
@@ -84,6 +85,10 @@ int main() {
         std::cout << "Engine cache: " << enginePath << '\n';
 
         TensorRtDetector detector(onnxPath, enginePath);
+        CudaPostprocessor postprocessor(config.inference().maxDetections);
+        int candidateCount = std::min(
+            config.inference().maxDetections,
+            static_cast<int>(detector.outputCount() / 6));
 
         DxgiScreenCapture capture(detector.inputW(), detector.inputH());
         std::cout << "Primary display: " << capture.screenW() << "x" << capture.screenH() << '\n';
@@ -118,9 +123,14 @@ int main() {
                     }
 
                     auto afterCapture = Clock::now();
-                    auto output = detector.inferDeviceInput();
+                    detector.enqueueDeviceInput();
                     auto afterInfer = Clock::now();
-                    auto detections = decodeAndNms(output, letterbox);
+                    auto detections = postprocessor.decodeDetections(
+                        detector.deviceOutput(),
+                        candidateCount,
+                        letterbox,
+                        config.inference().scoreThreshold,
+                        detector.stream());
 
                     if (!detections.empty()) {
                         auto afterPost = Clock::now();

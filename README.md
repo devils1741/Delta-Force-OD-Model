@@ -10,40 +10,21 @@
 
 ## 当前功能
 
-- 使用 DXGI Desktop Duplication 捕获屏幕画面，并只复制中心 ROI 到 CUDA texture
-- 使用 CUDA 在 GPU 上完成 ROI letterbox、BGRA 转 RGB、归一化和 CHW 排布
-- 使用 TensorRT FP16 engine 进行推理
-- 检测框通过透明 overlay 窗口绘制到屏幕上
-- 运行参数集中放在 `config/config.yaml`
-- 默认输入尺寸为 `640x640`
-- 默认捕获屏幕中心 `1600x900` ROI
-- 默认检测频率上限为 `60 FPS`
+- 使用DXGI Desktop Duplication 捕获屏幕画面，并只复制中心ROI到CUDA texture
+- 使用CUDA在GPU上完成ROIletterbox、BGRA转RGB、归一化和CHW排布
+- 使用TensorRT FP16 engine进行推理
+- 检测框通过透明overlay窗口绘制到屏幕上
+- 运行参数集中放在`config/config.yaml`
 
 ## 推理流程
 
 ```text
 DXGI screen capture
   -> D3D11 copy center ROI
-  -> CUDA preprocess ROI to 640x640 tensor
+  -> CUDA preprocess ROI to tensor
   -> TensorRT FP16 inference
-  -> CPU decode + NMS
+  -> CUDA decode end-to-end detections
   -> transparent overlay draw
-```
-
-## 项目结构
-
-```text
-delta/
-  CMakeLists.txt
-  README.md
-  config/
-    config.yaml
-  src/
-    main.cpp
-    include/
-    source/
-  weights/
-  assert/
 ```
 
 ## 依赖
@@ -62,60 +43,55 @@ set(TENSORRT_ROOT "C:/Program Files/TensorRT-10.16.1.11")
 
 如本机路径不同，需要修改该变量。
 
-## 模型文件
-
-默认模型路径在 [config/config.yaml](config/config.yaml) 中配置：
-
-```text
-weights/best.onnx
-```
-
-首次运行会生成 TensorRT engine 缓存：
-
-```text
-weights/best_640_trt10_16_sm89_fp16.engine
-```
-
-如果替换模型、输入尺寸或 TensorRT/CUDA 环境变化，建议删除旧 engine，让程序重新构建。
 
 ## 主要参数
 
-大部分运行参数在 [config/config.yaml](config/config.yaml) 中配置：
-
+大部分运行参数在 [config/config.yaml](config/config.yaml) 中配置.
 ```yaml
 model:
-  onnx_path: weights/best.onnx
-  engine_path: weights/best_640_trt10_16_sm89_fp16.engine
+  # ONNX 模型文件路径，相对项目根目录解析
+  onnx_path: weights/best_640.onnx
+
+  # TensorRT engine 缓存路径；首次运行会由 ONNX 构建生成
+  engine_path: weights/best_640.engine
+
+  # 模型输入宽度，必须与 ONNX / engine 的输入尺寸一致
+  input_width: 640
+
+  # 模型输入高度，必须与 ONNX / engine 的输入尺寸一致
+  input_height: 640
 
 inference:
-  target_fps: 60
+  # 推理目标帧率上限
+  target_fps: 120
+
+  # 置信度阈值，低于该分数的检测结果会被过滤
   score_threshold: 0.30
-  nms_threshold: 0.45
+
+  # 每帧最多保留的候选检测数量
   max_detections: 300
 
 capture:
+  # 采集的显示器索引，0 表示主显示器
   output_index: 0
+
+  # 屏幕中心 ROI 采集宽度
   roi_width: 1600
+
+  # 屏幕中心 ROI 采集高度
   roi_height: 900
 
 tensorrt:
+  # 是否启用 FP16 构建 TensorRT engine
   fp16: true
+
+  # TensorRT 构建 engine 时可使用的 workspace 大小，单位 MB
   workspace_mb: 1024
+
 ```
 
-配置文件中的相对路径按项目根目录解析，所以 `weights/best.onnx` 会指向项目根目录下的 `weights/`。
-
-输入尺寸仍是编译期常量，位置在 [src/include/Detection.h](src/include/Detection.h)：
-
-```cpp
-constexpr int kInputW = 640;
-constexpr int kInputH = 640;
-```
-
-如果修改输入尺寸，需要同步重新构建 TensorRT engine。建议删除旧 engine 缓存后再运行。
-
-## 构建
-
+## 编译
+首次编译时间会比较长
 ```powershell
 cmake -S . -B cmake-build-debug
 cmake --build cmake-build-debug --config Debug

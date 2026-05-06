@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <cstddef>
 #include <vector>
 
 /**
@@ -68,11 +69,13 @@ public:
      * @return TensorRT输出张量数据。
      */
     std::vector<float> inferDeviceInput();
+    void enqueueDeviceInput();
     /**
      * @brief 获取GPU输入缓冲区指针。
      * @return GPU输入张量指针。
      */
     float* deviceInput() const { return static_cast<float*>(deviceInput_.get()); }
+    float* deviceOutput() const { return static_cast<float*>(deviceOutput_.get()); }
     /**
      * @brief 获取检测器使用的CUDA stream。
      * @return CUDA stream句柄。
@@ -98,6 +101,7 @@ public:
      * @return 输入高度，单位为像素。
      */
     int inputH() const { return inputH_; }
+    size_t outputCount() const { return outputCount_; }
 
 private:
     /**

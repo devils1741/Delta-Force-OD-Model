@@ -17,12 +17,11 @@ struct ModelConfig {
 /**
  * @brief 推理后处理配置。
  *
- * 控制目标帧率、置信度阈值、NMS阈值和最大检测数量。
+ * 控制目标帧率、置信度阈值和最大检测数量。
  */
 struct InferenceConfig {
     int targetFps{60};
     float scoreThreshold{0.30f};
-    float nmsThreshold{0.45f};
     int maxDetections{300};
 };
 
@@ -44,6 +43,8 @@ struct CaptureConfig {
  */
 struct TensorRtConfig {
     bool fp16{true};
+    bool int8{false};
+    std::filesystem::path calibrationCachePath{"weights/calibration.cache"};
     int workspaceMb{1024};
 };
 

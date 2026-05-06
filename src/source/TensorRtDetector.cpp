@@ -73,6 +73,58 @@ size_t volume(nvinfer1::Dims const& dims) {
     return count;
 }
 
+std::string dimsToString(nvinfer1::Dims const& dims) {
+    std::string text = "[";
+    for (int i = 0; i < dims.nbDims; ++i) {
+        if (i > 0) {
+            text += ", ";
+        }
+        text += std::to_string(dims.d[i]);
+    }
+    text += "]";
+    return text;
+}
+
+class CacheOnlyInt8Calibrator final : public nvinfer1::IInt8MinMaxCalibrator {
+public:
+    explicit CacheOnlyInt8Calibrator(fs::path const& cachePath) : cachePath_(cachePath) {
+        if (!fs::exists(cachePath_)) {
+            throw std::runtime_error("INT8 calibration cache does not exist: " + cachePath_.string());
+        }
+        cache_ = readFile(cachePath_);
+        if (cache_.empty()) {
+            throw std::runtime_error("INT8 calibration cache is empty: " + cachePath_.string());
+        }
+    }
+
+    int32_t getBatchSize() const noexcept override {
+        return 1;
+    }
+
+    bool getBatch(void*[], char const*[], int32_t) noexcept override {
+        return false;
+    }
+
+    void const* readCalibrationCache(std::size_t& length) noexcept override {
+        length = cache_.size();
+        return cache_.data();
+    }
+
+    void writeCalibrationCache(void const* ptr, std::size_t length) noexcept override {
+        if (!ptr || length == 0) {
+            return;
+        }
+        try {
+            writeFile(cachePath_, ptr, length);
+        } catch (...) {
+        }
+    }
+
+private:
+    fs::path cachePath_;
+    std::vector<char> cache_;
+};
+
 } // namespace
 
 void TrtLogger::log(Severity severity, char const* msg) noexcept {
@@ -129,13 +181,17 @@ std::vector<float> TensorRtDetector::infer(float const* input) {
 }
 
 std::vector<float> TensorRtDetector::inferDeviceInput() {
-    if (!context_->enqueueV3(stream_)) {
-        throw std::runtime_error("TensorRT enqueueV3 failed");
-    }
+    enqueueDeviceInput();
     checkCuda(cudaMemcpyAsync(output_.data(), deviceOutput_.get(), outputBytes_, cudaMemcpyDeviceToHost, stream_),
               "cudaMemcpyAsync D2H");
     checkCuda(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
     return output_;
+}
+
+void TensorRtDetector::enqueueDeviceInput() {
+    if (!context_->enqueueV3(stream_)) {
+        throw std::runtime_error("TensorRT enqueueV3 failed");
+    }
 }
 
 void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path const& cachePath) {
@@ -162,7 +218,9 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         throw std::runtime_error("Failed to create TensorRT builder");
     }
 
-    TrtUniquePtr<nvinfer1::INetworkDefinition> network(builder->createNetworkV2(0U));
+    uint32_t const explicitBatch =
+        1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+    TrtUniquePtr<nvinfer1::INetworkDefinition> network(builder->createNetworkV2(explicitBatch));
     if (!network) {
         throw std::runtime_error("Failed to create TensorRT network");
     }
@@ -188,6 +246,13 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         static_cast<size_t>(trt.workspaceMb) * 1024ULL * 1024ULL);
     if (trt.fp16) {
         config->setFlag(nvinfer1::BuilderFlag::kFP16);
+    }
+    std::unique_ptr<CacheOnlyInt8Calibrator> int8Calibrator;
+    if (trt.int8) {
+        int8Calibrator = std::make_unique<CacheOnlyInt8Calibrator>(trt.calibrationCachePath);
+        config->setFlag(nvinfer1::BuilderFlag::kINT8);
+        config->setInt8Calibrator(int8Calibrator.get());
+        std::cout << "Using INT8 calibration cache: " << trt.calibrationCachePath << '\n';
     }
     TrtUniquePtr<nvinfer1::IHostMemory> serialized(builder->buildSerializedNetwork(*network, *config));
     if (!serialized) {
@@ -224,7 +289,7 @@ void TensorRtDetector::discoverTensorShapes() {
     auto outputDims = engine_->getTensorShape(outputName_.c_str());
 
     if (inputDims.nbDims != 4 || inputDims.d[0] != 1 || inputDims.d[1] != 3) {
-        throw std::runtime_error("Expected input shape [1, 3, H, W]");
+        throw std::runtime_error("Expected input shape [1, 3, H, W], got " + dimsToString(inputDims));
     }
 
     inputH_ = static_cast<int>(inputDims.d[2]);

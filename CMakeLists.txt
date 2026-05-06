@@ -26,6 +26,7 @@ add_executable(delta
         src/main.cpp
         src/source/AppConfig.cpp
         src/source/Detection.cpp
+        src/source/CudaPostprocess.cu
         src/source/CudaPreprocess.cu
         src/source/DxgiScreenCapture.cpp
         src/source/OverlayWindow.cpp
@@ -35,6 +36,7 @@ add_executable(delta
         src/source/TensorRtDetector.cpp
         src/include/AppConfig.h
         src/include/Detection.h
+        src/include/CudaPostprocess.h
         src/include/CudaPreprocess.h
         src/include/DxgiScreenCapture.h
         src/include/OverlayWindow.h

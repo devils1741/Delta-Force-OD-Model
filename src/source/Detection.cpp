@@ -5,28 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace {
-
-/**
- * @brief 计算两个检测框的交并比。
- * @param a 第一个检测框。
- * @param b 第二个检测框。
- * @return 两个检测框的IoU值。
- */
-float iou(Box const& a, Box const& b) {
-    float x1 = std::max(a.x1, b.x1);
-    float y1 = std::max(a.y1, b.y1);
-    float x2 = std::min(a.x2, b.x2);
-    float y2 = std::min(a.y2, b.y2);
-    float inter = std::max(0.0f, x2 - x1) * std::max(0.0f, y2 - y1);
-    float areaA = std::max(0.0f, a.x2 - a.x1) * std::max(0.0f, a.y2 - a.y1);
-    float areaB = std::max(0.0f, b.x2 - b.x1) * std::max(0.0f, b.y2 - b.y1);
-    return inter / std::max(1e-6f, areaA + areaB - inter);
-}
-
-} // namespace
-
-std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo const& letterbox) {
+std::vector<Box> decodeDetections(std::vector<float> const& output, LetterboxInfo const& letterbox) {
     auto const& config = AppConfig::instance().inference();
     std::vector<Box> boxes;
     int maxDetections = std::min(config.maxDetections, static_cast<int>(output.size() / 6));
@@ -70,22 +49,5 @@ std::vector<Box> decodeAndNms(std::vector<float> const& output, LetterboxInfo co
         boxes.push_back({x1, y1, x2, y2, score});
     }
 
-    std::sort(boxes.begin(), boxes.end(), [](Box const& lhs, Box const& rhs) {
-        return lhs.score > rhs.score;
-    });
-
-    std::vector<Box> kept;
-    for (auto const& box : boxes) {
-        bool suppressed = false;
-        for (auto const& selected : kept) {
-            if (iou(box, selected) > config.nmsThreshold) {
-                suppressed = true;
-                break;
-            }
-        }
-        if (!suppressed) {
-            kept.push_back(box);
-        }
-    }
-    return kept;
+    return boxes;
 }

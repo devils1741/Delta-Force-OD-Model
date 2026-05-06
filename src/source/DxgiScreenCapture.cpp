@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <iterator>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -25,8 +27,10 @@ namespace {
  */
 void checkHr(HRESULT hr, char const* what) {
     if (FAILED(hr)) {
-        throw std::runtime_error(std::string(what) + " failed, HRESULT=0x" +
-                                 std::to_string(static_cast<unsigned long>(hr)));
+        std::ostringstream out;
+        out << what << " failed, HRESULT=0x" << std::hex << std::uppercase
+            << static_cast<unsigned long>(hr);
+        throw std::runtime_error(out.str());
     }
 }
 
@@ -142,14 +146,56 @@ bool DxgiScreenCapture::captureToDevice(float* deviceInput, cudaStream_t stream)
 void DxgiScreenCapture::initD3d() {
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
+    ComPtr<IDXGIFactory1> factory;
+    checkHr(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "CreateDXGIFactory1");
+
+    auto const desiredOutput = static_cast<UINT>(AppConfig::instance().capture().outputIndex);
+    UINT outputIndex = 0;
+    ComPtr<IDXGIAdapter1> selectedAdapter;
+
+    for (UINT adapterIndex = 0;; ++adapterIndex) {
+        ComPtr<IDXGIAdapter1> adapter;
+        HRESULT adapterHr = factory->EnumAdapters1(adapterIndex, &adapter);
+        if (adapterHr == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+        checkHr(adapterHr, "IDXGIFactory1::EnumAdapters1");
+
+        for (UINT adapterOutputIndex = 0;; ++adapterOutputIndex) {
+            ComPtr<IDXGIOutput> output;
+            HRESULT outputHr = adapter->EnumOutputs(adapterOutputIndex, &output);
+            if (outputHr == DXGI_ERROR_NOT_FOUND) {
+                break;
+            }
+            checkHr(outputHr, "IDXGIAdapter::EnumOutputs");
+
+            if (outputIndex == desiredOutput) {
+                selectedAdapter = adapter;
+                output_ = output;
+                break;
+            }
+            ++outputIndex;
+        }
+
+        if (selectedAdapter) {
+            break;
+        }
+    }
+
+    if (!selectedAdapter || !output_) {
+        throw std::runtime_error(
+            "Configured capture.output_index was not found. Available DXGI outputs: " +
+            std::to_string(outputIndex));
+    }
+
     D3D_FEATURE_LEVEL levels[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
     };
     D3D_FEATURE_LEVEL selected{};
     HRESULT hr = D3D11CreateDevice(
-        nullptr,
-        D3D_DRIVER_TYPE_HARDWARE,
+        selectedAdapter.Get(),
+        D3D_DRIVER_TYPE_UNKNOWN,
         nullptr,
         flags,
         levels,
@@ -162,24 +208,18 @@ void DxgiScreenCapture::initD3d() {
 }
 
 void DxgiScreenCapture::initDuplication() {
-    ComPtr<IDXGIDevice> dxgiDevice;
-    checkHr(device_.As(&dxgiDevice), "Query IDXGIDevice");
-
-    ComPtr<IDXGIAdapter> adapter;
-    checkHr(dxgiDevice->GetAdapter(&adapter), "IDXGIDevice::GetAdapter");
-
-    ComPtr<IDXGIOutput> output;
-    checkHr(adapter->EnumOutputs(static_cast<UINT>(AppConfig::instance().capture().outputIndex), &output),
-            "IDXGIAdapter::EnumOutputs");
+    if (!output_) {
+        throw std::runtime_error("DXGI output is not initialized");
+    }
 
     DXGI_OUTPUT_DESC desc{};
-    checkHr(output->GetDesc(&desc), "IDXGIOutput::GetDesc");
+    checkHr(output_->GetDesc(&desc), "IDXGIOutput::GetDesc");
     screenW_ = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
     screenH_ = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
     letterbox_ = makeLetterbox(screenW_, screenH_, inputW_, inputH_);
 
     ComPtr<IDXGIOutput1> output1;
-    checkHr(output.As(&output1), "Query IDXGIOutput1");
+    checkHr(output_.As(&output1), "Query IDXGIOutput1");
     checkHr(output1->DuplicateOutput(device_.Get(), &duplication_), "IDXGIOutput1::DuplicateOutput");
 }
 

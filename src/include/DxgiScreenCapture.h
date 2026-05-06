@@ -10,6 +10,7 @@
 #include <wrl/client.h>
 
 struct IDXGIOutputDuplication;
+struct IDXGIOutput;
 struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11Texture2D;
@@ -101,6 +102,7 @@ private:
     LetterboxInfo letterbox_{};
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
+    Microsoft::WRL::ComPtr<IDXGIOutput> output_;
     Microsoft::WRL::ComPtr<IDXGIOutputDuplication> duplication_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> cudaTexture_;
     cudaGraphicsResource* cudaResource_{};
