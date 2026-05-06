@@ -4,9 +4,8 @@
 
 ## 效果展示
 
-![检测效果 1](assert/2026-04-30%2011-45-07_03m17s-03m19s.gif)
+![检测效果 1](assert/001.gif)
 
-![检测效果 2](assert/2026-04-30%2011-45-07_03m21s-03m23s.gif)
 
 ## 当前功能
 
@@ -53,7 +52,7 @@ model:
   onnx_path: weights/best_640.onnx
 
   # TensorRT engine 缓存路径；首次运行会由 ONNX 构建生成
-  engine_path: weights/best_640.engine
+  engine_path: weights/best_640.engine 
 
   # 模型输入宽度，必须与 ONNX / engine 的输入尺寸一致
   input_width: 640
