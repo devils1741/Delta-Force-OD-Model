@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -20,6 +21,26 @@ LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
     return DefWindowProc(hwnd, msg, wParam, lParam);
+}
+
+RECT boxDirtyRect(Box const& box) {
+    RECT rect{};
+    rect.left = static_cast<LONG>(std::floor(box.x1)) - 8;
+    rect.top = std::max<LONG>(0, static_cast<LONG>(std::floor(box.y1)) - 30);
+    rect.right = static_cast<LONG>(std::ceil(box.x2)) + 8;
+    rect.bottom = static_cast<LONG>(std::ceil(box.y2)) + 8;
+    return rect;
+}
+
+void clampRect(RECT& rect, RECT const& bounds) {
+    rect.left = std::clamp(rect.left, bounds.left, bounds.right);
+    rect.top = std::clamp(rect.top, bounds.top, bounds.bottom);
+    rect.right = std::clamp(rect.right, bounds.left, bounds.right);
+    rect.bottom = std::clamp(rect.bottom, bounds.top, bounds.bottom);
+}
+
+bool isEmpty(RECT const& rect) {
+    return rect.right <= rect.left || rect.bottom <= rect.top;
 }
 
 } // namespace
@@ -52,19 +73,53 @@ HWND createOverlayWindow(HINSTANCE instance, int width, int height) {
     SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+
+    HDC dc = GetDC(hwnd);
+    RECT client{0, 0, width, height};
+    HBRUSH clearBrush = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(dc, &client, clearBrush);
+    DeleteObject(clearBrush);
+    ReleaseDC(hwnd, dc);
+
     return hwnd;
 }
 
 void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
+    static std::vector<Box> previousBoxes;
+    static HBRUSH clearBrush = CreateSolidBrush(RGB(0, 0, 0));
+    static HPEN pen = CreatePen(PS_SOLID, 4, RGB(0, 255, 0));
+
     RECT client{};
     GetClientRect(hwnd, &client);
 
     HDC dc = GetDC(hwnd);
-    HBRUSH clearBrush = CreateSolidBrush(RGB(0, 0, 0));
-    FillRect(dc, &client, clearBrush);
-    DeleteObject(clearBrush);
+    std::vector<RECT> dirtyRects;
+    dirtyRects.reserve(previousBoxes.size() + boxes.size());
 
-    HPEN pen = CreatePen(PS_SOLID, 4, RGB(0, 255, 0));
+    for (auto const& box : previousBoxes) {
+        RECT rect = boxDirtyRect(box);
+        clampRect(rect, client);
+        if (!isEmpty(rect)) {
+            dirtyRects.push_back(rect);
+        }
+    }
+    for (auto const& box : boxes) {
+        RECT rect = boxDirtyRect(box);
+        clampRect(rect, client);
+        if (!isEmpty(rect)) {
+            dirtyRects.push_back(rect);
+        }
+    }
+
+    if (dirtyRects.empty() && previousBoxes.empty() && boxes.empty()) {
+        ReleaseDC(hwnd, dc);
+        return;
+    }
+
+    for (auto const& rect : dirtyRects) {
+        FillRect(dc, &rect, clearBrush);
+    }
+
     HGDIOBJ oldPen = SelectObject(dc, pen);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
     SetBkMode(dc, TRANSPARENT);
@@ -84,6 +139,6 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
 
     SelectObject(dc, oldBrush);
     SelectObject(dc, oldPen);
-    DeleteObject(pen);
     ReleaseDC(hwnd, dc);
+    previousBoxes = boxes;
 }

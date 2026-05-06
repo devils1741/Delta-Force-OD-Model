@@ -26,6 +26,12 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 
+#ifndef NDEBUG
+constexpr bool kLogFrameTimings = true;
+#else
+constexpr bool kLogFrameTimings = false;
+#endif
+
 /**
  * @brief 启用进程DPI感知，避免高DPI屏幕下坐标缩放错误。
  * @note 无返回值。
@@ -73,6 +79,8 @@ int main() {
     try {
         std::cout << std::unitbuf;
         enableDpiAwareness();
+        SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
         fs::path configPath = findConfigFile();
         AppConfig::instance().load(configPath);
@@ -108,9 +116,14 @@ int main() {
         LatestBoxes latestBoxes;
         ThreadError threadError;
         std::atomic_bool running{true};
+        HANDLE drawEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!drawEvent) {
+            throw std::runtime_error("CreateEventW drawEvent failed");
+        }
 
         std::thread inferenceThread([&] {
             try {
+                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
                 uint64_t frameIndex = 0;
                 auto nextFrameTime = Clock::now();
                 while (running.load(std::memory_order_relaxed)) {
@@ -132,6 +145,7 @@ int main() {
                         config.inference().scoreThreshold,
                         detector.stream());
 
+                    if constexpr (kLogFrameTimings) {
                     if (!detections.empty()) {
                         auto afterPost = Clock::now();
                         auto captureMs =
@@ -149,9 +163,11 @@ int main() {
                                   << " post_ms=" << postMs
                                   << " detections=" << detections.size() << '\n';
                     }
+                    }
                     frameIndex++;
 
                     latestBoxes.publish(std::move(detections));
+                    SetEvent(drawEvent);
 
                     auto now = Clock::now();
                     if (now < nextFrameTime) {
@@ -163,12 +179,21 @@ int main() {
             } catch (...) {
                 threadError.capture(std::current_exception());
                 running.store(false, std::memory_order_relaxed);
+                SetEvent(drawEvent);
             }
         });
 
         MSG msg{};
         uint64_t drawnSequence = 0;
         while (running.load(std::memory_order_relaxed)) {
+            DWORD waitResult = MsgWaitForMultipleObjectsEx(
+                1,
+                &drawEvent,
+                INFINITE,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE);
+            bool shouldDraw = waitResult == WAIT_OBJECT_0;
+
             while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 if (msg.message == WM_QUIT) {
                     running.store(false, std::memory_order_relaxed);
@@ -178,17 +203,16 @@ int main() {
                 DispatchMessage(&msg);
             }
             std::vector<Box> boxes;
-            if (latestBoxes.snapshot(drawnSequence, boxes)) {
+            if (shouldDraw && latestBoxes.snapshot(drawnSequence, boxes)) {
                 drawOverlay(overlay, boxes);
             }
-
-            Sleep(1);
         }
 
         running.store(false, std::memory_order_relaxed);
         if (inferenceThread.joinable()) {
             inferenceThread.join();
         }
+        CloseHandle(drawEvent);
         threadError.rethrowIfAny();
 
         return 0;

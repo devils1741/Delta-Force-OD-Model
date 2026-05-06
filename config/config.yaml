@@ -1,18 +1,18 @@
 model:
-  onnx_path: weights/best_320.onnx
-  engine_path: weights/best_320.engine
-  input_width: 320
-  input_height: 320
+  onnx_path: weights/best_640.onnx
+  engine_path: weights/best_640.engine
+  input_width: 640
+  input_height: 640
 
 inference:
-  target_fps: 120
+  target_fps: 240
   score_threshold: 0.30
   max_detections: 300
 
 capture:
   output_index: 0
-  roi_width: 640
-  roi_height: 640
+  roi_width: 1280
+  roi_height: 1280
 
 tensorrt:
   fp16: true
