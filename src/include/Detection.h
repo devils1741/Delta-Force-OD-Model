@@ -25,6 +25,8 @@ struct LetterboxInfo {
     int inputH{};
     int screenW{};
     int screenH{};
+    int desktopX{};
+    int desktopY{};
     int captureX{};
     int captureY{};
     int captureW{};

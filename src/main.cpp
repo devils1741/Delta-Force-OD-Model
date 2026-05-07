@@ -10,12 +10,14 @@
 #include "RealtimePipeline.h"
 #include "TensorRtDetector.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <exception>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <cmath>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -31,7 +33,6 @@ constexpr bool kLogFrameTimings = true;
 #else
 constexpr bool kLogFrameTimings = false;
 #endif
-
 /**
  * @brief 启用进程DPI感知，避免高DPI屏幕下坐标缩放错误。
  * @note 无返回值。
@@ -67,6 +68,135 @@ fs::path findConfigFile() {
         }
     }
     throw std::runtime_error("Cannot find config/config.yaml. Run from the project root or cmake-build-debug.");
+}
+
+bool isUsableTarget(Box const& box, InferenceConfig const& inference) {
+    return (box.x2 - box.x1) >= inference.minTargetWidthPx &&
+           (box.y2 - box.y1) >= inference.minTargetHeightPx;
+}
+
+void removeSmallTargets(std::vector<Box>& boxes, InferenceConfig const& inference) {
+    boxes.erase(
+        std::remove_if(
+            boxes.begin(),
+            boxes.end(),
+            [&](Box const& box) {
+                return !isUsableTarget(box, inference);
+            }),
+        boxes.end());
+}
+
+bool isLeftButtonRequested() {
+    SHORT state = GetAsyncKeyState(VK_LBUTTON);
+    return (state & 0x8000) != 0;
+}
+
+bool aimFromScreenCenter(MouseConfig const& mouse) {
+    return mouse.mode != "absolute";
+}
+
+int nearestTargetIndexToPoint(
+    std::vector<Box> const& boxes,
+    POINT const& point) {
+    int bestIndex = -1;
+    double bestDistanceSq = 0.0;
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        Box const& box = boxes[i];
+        double centerX = (box.x1 + box.x2) * 0.5;
+        double centerY = (box.y1 + box.y2) * 0.5;
+        double dx = centerX - point.x;
+        double dy = centerY - point.y;
+        double distanceSq = dx * dx + dy * dy;
+        if (bestIndex < 0 || distanceSq < bestDistanceSq) {
+            bestIndex = static_cast<int>(i);
+            bestDistanceSq = distanceSq;
+        }
+    }
+    return bestIndex;
+}
+
+POINT targetCenter(Box const& target) {
+    return POINT{
+        static_cast<LONG>(std::lround((target.x1 + target.x2) * 0.5f)),
+        static_cast<LONG>(std::lround((target.y1 + target.y2) * 0.5f)),
+    };
+}
+
+POINT targetGlobalCenter(Box const& target, LetterboxInfo const& letterbox) {
+    POINT center = targetCenter(target);
+    return POINT{
+        center.x + letterbox.desktopX,
+        center.y + letterbox.desktopY,
+    };
+}
+
+struct MouseMovePlan {
+    POINT targetGlobal{};
+    float errorX = 0.0f;
+    float errorY = 0.0f;
+    POINT delta{};
+};
+
+MouseMovePlan planMouseMove(Box const& target, LetterboxInfo const& letterbox, POINT const& cursor) {
+    MouseMovePlan plan{};
+    plan.targetGlobal = targetGlobalCenter(target, letterbox);
+    plan.errorX = static_cast<float>(plan.targetGlobal.x - cursor.x);
+    plan.errorY = static_cast<float>(plan.targetGlobal.y - cursor.y);
+
+    constexpr float kDeadzonePx = 2.0f;
+    if (std::fabs(plan.errorX) <= kDeadzonePx && std::fabs(plan.errorY) <= kDeadzonePx) {
+        return plan;
+    }
+
+    int dx = static_cast<int>(std::lround(plan.errorX));
+    int dy = static_cast<int>(std::lround(plan.errorY));
+    if (dx == 0 && std::fabs(plan.errorX) > kDeadzonePx) {
+        dx = plan.errorX > 0.0f ? 1 : -1;
+    }
+    if (dy == 0 && std::fabs(plan.errorY) > kDeadzonePx) {
+        dy = plan.errorY > 0.0f ? 1 : -1;
+    }
+    plan.delta = POINT{dx, dy};
+    return plan;
+}
+
+POINT plannedMouseDelta(Box const& target, LetterboxInfo const& letterbox, POINT const& cursor) {
+    return planMouseMove(target, letterbox, cursor).delta;
+}
+
+bool sendRelativeMouseMove(POINT const& delta, MouseConfig const& mouse) {
+    INPUT input{};
+    input.type = INPUT_MOUSE;
+    input.mi.dx = static_cast<LONG>(std::lround(static_cast<float>(delta.x) * mouse.relativeScale));
+    input.mi.dy = static_cast<LONG>(std::lround(static_cast<float>(delta.y) * mouse.relativeScale));
+    input.mi.dwFlags = MOUSEEVENTF_MOVE;
+    if (input.mi.dx == 0 && delta.x != 0) {
+        input.mi.dx = delta.x > 0 ? 1 : -1;
+    }
+    if (input.mi.dy == 0 && delta.y != 0) {
+        input.mi.dy = delta.y > 0 ? 1 : -1;
+    }
+    return SendInput(1, &input, sizeof(INPUT)) == 1;
+}
+
+bool moveCursorTowardTarget(
+    Box const& target,
+    LetterboxInfo const& letterbox,
+    POINT const& referencePoint,
+    MouseConfig const& mouse) {
+    POINT delta = plannedMouseDelta(target, letterbox, referencePoint);
+    if (delta.x == 0 && delta.y == 0) {
+        return true;
+    }
+    if (mouse.mode == "absolute") {
+        return SetCursorPos(referencePoint.x + delta.x, referencePoint.y + delta.y) != FALSE;
+    }
+    if (mouse.mode == "both") {
+        bool absoluteOk = SetCursorPos(referencePoint.x + delta.x, referencePoint.y + delta.y) != FALSE;
+        bool relativeOk = sendRelativeMouseMove(delta, mouse);
+        return absoluteOk || relativeOk;
+    }
+    return sendRelativeMouseMove(delta, mouse);
 }
 
 } // namespace
@@ -108,11 +238,21 @@ int main() {
                   << " y=" << capture.letterbox().captureY
                   << " w=" << capture.letterbox().captureW
                   << " h=" << capture.letterbox().captureH << '\n';
-        LetterboxInfo letterbox = capture.letterbox();
+        std::cout << "Mouse mode: " << config.mouse().mode
+                  << ", relative_scale=" << config.mouse().relativeScale
+                  << ", move_cooldown_frames=" << config.mouse().moveCooldownFrames << '\n';
+        std::cout << "Diagnostics: log_interval_frames=" << config.inference().logIntervalFrames
+                  << ", overlay_interval_frames=" << config.inference().overlayIntervalFrames << '\n';
+        LetterboxInfo initialLetterbox = capture.letterbox();
 
         std::cout << "Running realtime screen inference.\n";
 
-        HWND overlay = createOverlayWindow(GetModuleHandle(nullptr), capture.screenW(), capture.screenH());
+        HWND overlay = createOverlayWindow(
+            GetModuleHandle(nullptr),
+            initialLetterbox.desktopX,
+            initialLetterbox.desktopY,
+            capture.screenW(),
+            capture.screenH());
         LatestBoxes latestBoxes;
         ThreadError threadError;
         std::atomic_bool running{true};
@@ -125,6 +265,7 @@ int main() {
             try {
                 SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
                 uint64_t frameIndex = 0;
+                int moveCooldownFramesRemaining = 0;
                 auto nextFrameTime = Clock::now();
                 while (running.load(std::memory_order_relaxed)) {
                     nextFrameTime += std::chrono::microseconds(1'000'000 / config.inference().targetFps);
@@ -136,18 +277,77 @@ int main() {
                     }
 
                     auto afterCapture = Clock::now();
+                    LetterboxInfo frameLetterbox = capture.letterbox();
                     detector.enqueueDeviceInput();
                     auto afterInfer = Clock::now();
                     auto detections = postprocessor.decodeDetections(
                         detector.deviceOutput(),
                         detector.deviceInput(),
                         candidateCount,
-                        letterbox,
+                        frameLetterbox,
                         config.inference().scoreThreshold,
                         detector.stream());
+                    int beforeSmallFilter = static_cast<int>(detections.size());
+                    removeSmallTargets(detections, config.inference());
+                    int smallFiltered = beforeSmallFilter - static_cast<int>(detections.size());
+                    bool leftRequested = isLeftButtonRequested();
+                    POINT cursor{};
+                    bool hasCursor = GetCursorPos(&cursor) != FALSE;
+                    POINT screenCenter{
+                        frameLetterbox.screenW / 2,
+                        frameLetterbox.screenH / 2,
+                    };
+                    POINT screenCenterGlobal{
+                        frameLetterbox.desktopX + screenCenter.x,
+                        frameLetterbox.desktopY + screenCenter.y,
+                    };
+                    POINT localCursor{
+                        cursor.x - frameLetterbox.desktopX,
+                        cursor.y - frameLetterbox.desktopY,
+                    };
+                    bool useScreenCenterAim = aimFromScreenCenter(config.mouse());
+                    POINT aimReferenceGlobal = useScreenCenterAim ? screenCenterGlobal : cursor;
+                    POINT aimReferenceLocal{
+                        aimReferenceGlobal.x - frameLetterbox.desktopX,
+                        aimReferenceGlobal.y - frameLetterbox.desktopY,
+                    };
+                    int nearestTargetIndex = hasCursor
+                        ? nearestTargetIndexToPoint(detections, aimReferenceLocal)
+                        : -1;
+                    MouseMovePlan nearestMovePlan{};
+                    if (nearestTargetIndex >= 0) {
+                        nearestMovePlan = planMouseMove(
+                            detections[static_cast<size_t>(nearestTargetIndex)],
+                            frameLetterbox,
+                            aimReferenceGlobal);
+                    }
+                    bool canMoveThisFrame = moveCooldownFramesRemaining <= 0;
+                    int selectedTargetIndex = leftRequested && hasCursor && canMoveThisFrame
+                        ? nearestTargetIndex
+                        : -1;
+                    MouseMovePlan selectedMovePlan{};
+                    if (selectedTargetIndex >= 0) {
+                        selectedMovePlan = planMouseMove(
+                            detections[static_cast<size_t>(selectedTargetIndex)],
+                            frameLetterbox,
+                            aimReferenceGlobal);
+                    }
+                    bool moveAttempted = selectedTargetIndex >= 0;
+                    bool moveSucceeded = false;
+                    if (moveAttempted) {
+                        moveSucceeded = moveCursorTowardTarget(
+                            detections[static_cast<size_t>(selectedTargetIndex)],
+                            frameLetterbox,
+                            aimReferenceGlobal,
+                            config.mouse());
+                        if (moveSucceeded) {
+                            moveCooldownFramesRemaining = config.mouse().moveCooldownFrames;
+                        }
+                    } else if (moveCooldownFramesRemaining > 0) {
+                        --moveCooldownFramesRemaining;
+                    }
 
                     if constexpr (kLogFrameTimings) {
-                    if (!detections.empty()) {
                         auto afterPost = Clock::now();
                         auto captureMs =
                             std::chrono::duration<double, std::milli>(afterCapture - start).count();
@@ -157,17 +357,105 @@ int main() {
                             std::chrono::duration<double, std::milli>(afterPost - afterInfer).count();
                         auto totalMs =
                             std::chrono::duration<double, std::milli>(afterPost - start).count();
-                        std::cout << "frame=" << frameIndex
-                                  << " total_ms=" << std::fixed << std::setprecision(2) << totalMs
-                                  << " capture_gpu_ms=" << captureMs
-                                  << " infer_ms=" << inferMs
-                                  << " post_ms=" << postMs
-                                  << " detections=" << detections.size() << '\n';
-                    }
+                        bool shouldLogFrame =
+                            !detections.empty() &&
+                            (config.inference().logIntervalFrames <= 1 ||
+                             frameIndex % static_cast<uint64_t>(config.inference().logIntervalFrames) == 0 ||
+                             moveAttempted);
+                        if (shouldLogFrame) {
+                            std::cout << "frame=" << frameIndex
+                                      << " total_ms=" << std::fixed << std::setprecision(2) << totalMs
+                                      << " capture_gpu_ms=" << captureMs
+                                      << " infer_enqueue_ms=" << inferMs
+                                      << " post_wait_ms=" << postMs
+                                      << " raw=" << postprocessor.rawDetectionCount()
+                                      << " mouse_mode=" << config.mouse().mode
+                                      << " mouse_relative_scale=" << config.mouse().relativeScale
+                                      << " mouse_cooldown_remaining=" << moveCooldownFramesRemaining
+                                      << " mouse_cooldown_config=" << config.mouse().moveCooldownFrames
+                                      << " team_filtered=" << postprocessor.teamFilteredCount()
+                                      << " small_filtered=" << smallFiltered
+                                      << " detections=" << detections.size()
+                                      << " desktop_origin=(" << frameLetterbox.desktopX
+                                      << "," << frameLetterbox.desktopY << ")"
+                                      << " screen_center_local=(" << screenCenter.x
+                                      << "," << screenCenter.y << ")"
+                                      << " screen_center_global=(" << screenCenterGlobal.x
+                                      << "," << screenCenterGlobal.y << ")"
+                                      << " aim_reference=" << (useScreenCenterAim ? "screen_center" : "cursor")
+                                      << " aim_reference_global=(" << aimReferenceGlobal.x
+                                      << "," << aimReferenceGlobal.y << ")"
+                                      << " left=" << (leftRequested ? 1 : 0);
+                            if (hasCursor) {
+                                std::cout << " cursor_global=(" << cursor.x
+                                          << "," << cursor.y << ")"
+                                          << " cursor_local=(" << localCursor.x
+                                          << "," << localCursor.y << ")";
+                            } else {
+                                std::cout << " cursor_global=(unavailable)";
+                            }
+                            if (nearestTargetIndex >= 0) {
+                                std::cout << " nearest=" << nearestTargetIndex
+                                          << " nearest_target_global=(" << nearestMovePlan.targetGlobal.x
+                                          << "," << nearestMovePlan.targetGlobal.y << ")"
+                                          << " err_x=" << nearestMovePlan.errorX
+                                          << " err_y=" << nearestMovePlan.errorY
+                                          << " planned_dx=" << nearestMovePlan.delta.x
+                                          << " planned_dy=" << nearestMovePlan.delta.y;
+                            } else {
+                                std::cout << " nearest=-1 nearest_target_global=(none)"
+                                             " err_x=0 err_y=0 planned_dx=0 planned_dy=0";
+                            }
+                            if (selectedTargetIndex >= 0) {
+                                std::cout << " selected=" << selectedTargetIndex
+                                          << " move_dx=" << selectedMovePlan.delta.x
+                                          << " move_dy=" << selectedMovePlan.delta.y
+                                          << " move_to_global=(" << (aimReferenceGlobal.x + selectedMovePlan.delta.x)
+                                          << "," << (aimReferenceGlobal.y + selectedMovePlan.delta.y) << ")";
+                            } else {
+                                std::cout << " selected=-1 move_dx=0 move_dy=0 move_to_global=(none)";
+                            }
+                            std::cout << " move_attempted=" << (moveAttempted ? 1 : 0)
+                                      << " move_ok=" << (moveSucceeded ? 1 : 0);
+                            for (size_t i = 0; i < detections.size(); ++i) {
+                                Box const& box = detections[i];
+                                POINT localCenter = targetCenter(box);
+                                POINT globalCenter = targetGlobalCenter(box, frameLetterbox);
+                                std::cout << " target" << i
+                                          << "_local_x1=" << box.x1
+                                          << " target" << i
+                                          << "_local_y1=" << box.y1
+                                          << " target" << i
+                                          << "_local_x2=" << box.x2
+                                          << " target" << i
+                                          << "_local_y2=" << box.y2
+                                          << " target" << i
+                                          << "_global_x1=" << (box.x1 + static_cast<float>(frameLetterbox.desktopX))
+                                          << " target" << i
+                                          << "_global_y1=" << (box.y1 + static_cast<float>(frameLetterbox.desktopY))
+                                          << " target" << i
+                                          << "_global_x2=" << (box.x2 + static_cast<float>(frameLetterbox.desktopX))
+                                          << " target" << i
+                                          << "_global_y2=" << (box.y2 + static_cast<float>(frameLetterbox.desktopY))
+                                          << " target" << i
+                                          << "_local_cx=" << localCenter.x
+                                          << " target" << i
+                                          << "_local_cy=" << localCenter.y
+                                          << " target" << i
+                                          << "_global_cx=" << globalCenter.x
+                                          << " target" << i
+                                          << "_global_cy=" << globalCenter.y
+                                          << " target" << i
+                                          << "_w=" << (box.x2 - box.x1)
+                                          << " target" << i
+                                          << "_h=" << (box.y2 - box.y1);
+                            }
+                            std::cout << '\n';
+                        }
                     }
                     frameIndex++;
 
-                    latestBoxes.publish(std::move(detections));
+                    latestBoxes.publish(std::move(detections), frameLetterbox);
                     SetEvent(drawEvent);
 
                     auto now = Clock::now();
@@ -204,8 +492,15 @@ int main() {
                 DispatchMessage(&msg);
             }
             std::vector<Box> boxes;
-            if (shouldDraw && latestBoxes.snapshot(drawnSequence, boxes)) {
-                drawOverlay(overlay, boxes);
+            LetterboxInfo drawLetterbox{};
+            if (shouldDraw && latestBoxes.snapshot(drawnSequence, boxes, drawLetterbox)) {
+                bool shouldDrawOverlay =
+                    config.inference().overlayIntervalFrames <= 1 ||
+                    drawnSequence % static_cast<uint64_t>(config.inference().overlayIntervalFrames) == 0 ||
+                    boxes.empty();
+                if (shouldDrawOverlay) {
+                    drawOverlay(overlay, boxes, drawLetterbox);
+                }
             }
         }
 

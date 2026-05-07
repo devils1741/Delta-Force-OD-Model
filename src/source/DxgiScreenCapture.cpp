@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <iostream>
 #include <iterator>
 #include <sstream>
 #include <stdexcept>
@@ -54,7 +55,7 @@ void checkCuda(cudaError_t status, char const* what) {
  * @param inputH 模型输入高度。
  * @return 完整的letterbox映射信息。
  */
-LetterboxInfo makeLetterbox(int screenW, int screenH, int inputW, int inputH) {
+LetterboxInfo makeLetterbox(int screenW, int screenH, int desktopX, int desktopY, int inputW, int inputH) {
     auto const& capture = AppConfig::instance().capture();
     int captureW = std::min(capture.roiWidth, screenW);
     int captureH = std::min(capture.roiHeight, screenH);
@@ -64,6 +65,8 @@ LetterboxInfo makeLetterbox(int screenW, int screenH, int inputW, int inputH) {
     info.inputH = inputH;
     info.screenW = screenW;
     info.screenH = screenH;
+    info.desktopX = desktopX;
+    info.desktopY = desktopY;
     info.captureX = (screenW - captureW) / 2;
     info.captureY = (screenH - captureH) / 2;
     info.captureW = captureW;
@@ -152,6 +155,8 @@ void DxgiScreenCapture::initD3d() {
     auto const desiredOutput = static_cast<UINT>(AppConfig::instance().capture().outputIndex);
     UINT outputIndex = 0;
     ComPtr<IDXGIAdapter1> selectedAdapter;
+    ComPtr<IDXGIAdapter1> firstAdapter;
+    ComPtr<IDXGIOutput> firstOutput;
 
     for (UINT adapterIndex = 0;; ++adapterIndex) {
         ComPtr<IDXGIAdapter1> adapter;
@@ -169,6 +174,11 @@ void DxgiScreenCapture::initD3d() {
             }
             checkHr(outputHr, "IDXGIAdapter::EnumOutputs");
 
+            if (!firstAdapter || !firstOutput) {
+                firstAdapter = adapter;
+                firstOutput = output;
+            }
+
             if (outputIndex == desiredOutput) {
                 selectedAdapter = adapter;
                 output_ = output;
@@ -183,9 +193,14 @@ void DxgiScreenCapture::initD3d() {
     }
 
     if (!selectedAdapter || !output_) {
-        throw std::runtime_error(
-            "Configured capture.output_index was not found. Available DXGI outputs: " +
-            std::to_string(outputIndex));
+        if (!firstAdapter || !firstOutput) {
+            throw std::runtime_error("No DXGI outputs were found");
+        }
+        std::cerr << "Warning: configured capture.output_index=" << desiredOutput
+                  << " was not found. Available DXGI outputs: " << outputIndex
+                  << ". Falling back to output_index=0.\n";
+        selectedAdapter = firstAdapter;
+        output_ = firstOutput;
     }
 
     D3D_FEATURE_LEVEL levels[] = {
@@ -216,7 +231,13 @@ void DxgiScreenCapture::initDuplication() {
     checkHr(output_->GetDesc(&desc), "IDXGIOutput::GetDesc");
     screenW_ = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
     screenH_ = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
-    letterbox_ = makeLetterbox(screenW_, screenH_, inputW_, inputH_);
+    letterbox_ = makeLetterbox(
+        screenW_,
+        screenH_,
+        desc.DesktopCoordinates.left,
+        desc.DesktopCoordinates.top,
+        inputW_,
+        inputH_);
 
     ComPtr<IDXGIOutput1> output1;
     checkHr(output_.As(&output1), "Query IDXGIOutput1");

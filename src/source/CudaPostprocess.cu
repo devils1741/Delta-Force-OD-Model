@@ -129,10 +129,14 @@ __device__ DecodedBox decodeBox(float const* output, int i, LetterboxInfo letter
     box.inputX2 = fminf(fmaxf(x2, 0.0f), static_cast<float>(letterbox.inputW - 1));
     box.inputY2 = fminf(fmaxf(y2, 0.0f), static_cast<float>(letterbox.inputH - 1));
 
-    x1 = (x1 - static_cast<float>(letterbox.padX)) / letterbox.scale + static_cast<float>(letterbox.captureX);
-    y1 = (y1 - static_cast<float>(letterbox.padY)) / letterbox.scale + static_cast<float>(letterbox.captureY);
-    x2 = (x2 - static_cast<float>(letterbox.padX)) / letterbox.scale + static_cast<float>(letterbox.captureX);
-    y2 = (y2 - static_cast<float>(letterbox.padY)) / letterbox.scale + static_cast<float>(letterbox.captureY);
+    x1 = (box.inputX1 - static_cast<float>(letterbox.padX)) / letterbox.scale +
+         static_cast<float>(letterbox.captureX);
+    y1 = (box.inputY1 - static_cast<float>(letterbox.padY)) / letterbox.scale +
+         static_cast<float>(letterbox.captureY);
+    x2 = (box.inputX2 - static_cast<float>(letterbox.padX)) / letterbox.scale +
+         static_cast<float>(letterbox.captureX);
+    y2 = (box.inputY2 - static_cast<float>(letterbox.padY)) / letterbox.scale +
+         static_cast<float>(letterbox.captureY);
 
     x1 = fminf(fmaxf(x1, 0.0f), static_cast<float>(letterbox.screenW - 1));
     y1 = fminf(fmaxf(y1, 0.0f), static_cast<float>(letterbox.screenH - 1));
@@ -159,14 +163,22 @@ __global__ void decodeDetectionsKernel(
     float scoreThreshold,
     int maxDetections,
     Box* keptBoxes,
-    int* keptCount) {
+    int* keptCount,
+    int* rawCount,
+    int* teamFilteredCount) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= candidateCount || i >= maxDetections) {
         return;
     }
 
     DecodedBox box = decodeBox(output, i, letterbox, scoreThreshold);
-    if (box.screen.score < scoreThreshold || hasTeamLogo(input, box, letterbox)) {
+    if (box.screen.score < scoreThreshold) {
+        return;
+    }
+
+    atomicAdd(rawCount, 1);
+    if (hasTeamLogo(input, box, letterbox)) {
+        atomicAdd(teamFilteredCount, 1);
         return;
     }
 
@@ -189,10 +201,16 @@ CudaPostprocessor::CudaPostprocessor(int maxDetections)
       hostBoxes_(static_cast<size_t>(std::max(1, maxDetections))) {
     void* boxes{};
     void* count{};
+    void* rawCount{};
+    void* teamFilteredCount{};
     checkCuda(cudaMalloc(&boxes, hostBoxes_.size() * sizeof(Box)), "cudaMalloc postprocess boxes");
     checkCuda(cudaMalloc(&count, sizeof(int)), "cudaMalloc postprocess count");
+    checkCuda(cudaMalloc(&rawCount, sizeof(int)), "cudaMalloc postprocess raw count");
+    checkCuda(cudaMalloc(&teamFilteredCount, sizeof(int)), "cudaMalloc postprocess team filtered count");
     deviceBoxes_.reset(boxes);
     deviceCount_.reset(count);
+    deviceRawCount_.reset(rawCount);
+    deviceTeamFilteredCount_.reset(teamFilteredCount);
 }
 
 CudaPostprocessor::~CudaPostprocessor() = default;
@@ -207,6 +225,10 @@ std::vector<Box> CudaPostprocessor::decodeDetections(
     candidateCount = std::clamp(candidateCount, 0, maxDetections_);
 
     checkCuda(cudaMemsetAsync(deviceCount_.get(), 0, sizeof(int), stream), "cudaMemsetAsync postprocess count");
+    checkCuda(cudaMemsetAsync(deviceRawCount_.get(), 0, sizeof(int), stream),
+              "cudaMemsetAsync postprocess raw count");
+    checkCuda(cudaMemsetAsync(deviceTeamFilteredCount_.get(), 0, sizeof(int), stream),
+              "cudaMemsetAsync postprocess team filtered count");
 
     int constexpr threadsPerBlock = 128;
     int blocks = (candidateCount + threadsPerBlock - 1) / threadsPerBlock;
@@ -219,11 +241,22 @@ std::vector<Box> CudaPostprocessor::decodeDetections(
             scoreThreshold,
             maxDetections_,
             static_cast<Box*>(deviceBoxes_.get()),
-            static_cast<int*>(deviceCount_.get()));
+            static_cast<int*>(deviceCount_.get()),
+            static_cast<int*>(deviceRawCount_.get()),
+            static_cast<int*>(deviceTeamFilteredCount_.get()));
         checkCuda(cudaGetLastError(), "decodeDetectionsKernel");
     }
     checkCuda(cudaMemcpyAsync(&hostCount_, deviceCount_.get(), sizeof(int), cudaMemcpyDeviceToHost, stream),
               "cudaMemcpyAsync postprocess count");
+    checkCuda(cudaMemcpyAsync(&hostRawCount_, deviceRawCount_.get(), sizeof(int), cudaMemcpyDeviceToHost, stream),
+              "cudaMemcpyAsync postprocess raw count");
+    checkCuda(cudaMemcpyAsync(
+                  &hostTeamFilteredCount_,
+                  deviceTeamFilteredCount_.get(),
+                  sizeof(int),
+                  cudaMemcpyDeviceToHost,
+                  stream),
+              "cudaMemcpyAsync postprocess team filtered count");
     checkCuda(cudaMemcpyAsync(hostBoxes_.data(), deviceBoxes_.get(), hostBoxes_.size() * sizeof(Box),
                               cudaMemcpyDeviceToHost, stream),
               "cudaMemcpyAsync postprocess boxes");

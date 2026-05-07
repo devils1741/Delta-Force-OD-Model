@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 /**
  * @brief 模型文件和输入尺寸配置。
@@ -23,6 +24,11 @@ struct InferenceConfig {
     int targetFps{60};
     float scoreThreshold{0.30f};
     int maxDetections{300};
+    int lostTargetFrameLimit{3};
+    float minTargetWidthPx{24.0f};
+    float minTargetHeightPx{48.0f};
+    int logIntervalFrames{30};
+    int overlayIntervalFrames{4};
 };
 
 /**
@@ -34,6 +40,12 @@ struct CaptureConfig {
     int outputIndex{0};
     int roiWidth{1600};
     int roiHeight{900};
+};
+
+struct MouseConfig {
+    std::string mode{"relative"};
+    float relativeScale{1.0f};
+    int moveCooldownFrames{12};
 };
 
 /**
@@ -83,6 +95,7 @@ public:
      * @return 采集配置的只读引用。
      */
     CaptureConfig const& capture() const { return capture_; }
+    MouseConfig const& mouse() const { return mouse_; }
     /**
      * @brief 获取TensorRT配置。
      * @return TensorRT配置的只读引用。
@@ -99,5 +112,6 @@ private:
     ModelConfig model_;
     InferenceConfig inference_;
     CaptureConfig capture_;
+    MouseConfig mouse_;
     TensorRtConfig tensorrt_;
 };

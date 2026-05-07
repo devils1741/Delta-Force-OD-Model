@@ -3,6 +3,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 
@@ -51,6 +52,17 @@ void validatePositive(char const* name, int value) {
     }
 }
 
+std::string lowerCopy(std::string value) {
+    std::transform(
+        value.begin(),
+        value.end(),
+        value.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    return value;
+}
+
 } // namespace
 
 AppConfig& AppConfig::instance() {
@@ -73,11 +85,23 @@ void AppConfig::load(fs::path const& path) {
     inference_.targetFps = readOr(inference, "target_fps", inference_.targetFps);
     inference_.scoreThreshold = readOr(inference, "score_threshold", inference_.scoreThreshold);
     inference_.maxDetections = readOr(inference, "max_detections", inference_.maxDetections);
+    inference_.lostTargetFrameLimit =
+        readOr(inference, "lost_target_frame_limit", inference_.lostTargetFrameLimit);
+    inference_.minTargetWidthPx = readOr(inference, "min_target_width_px", inference_.minTargetWidthPx);
+    inference_.minTargetHeightPx = readOr(inference, "min_target_height_px", inference_.minTargetHeightPx);
+    inference_.logIntervalFrames = readOr(inference, "log_interval_frames", inference_.logIntervalFrames);
+    inference_.overlayIntervalFrames =
+        readOr(inference, "overlay_interval_frames", inference_.overlayIntervalFrames);
 
     auto capture = root["capture"];
     capture_.outputIndex = readOr(capture, "output_index", capture_.outputIndex);
     capture_.roiWidth = readOr(capture, "roi_width", capture_.roiWidth);
     capture_.roiHeight = readOr(capture, "roi_height", capture_.roiHeight);
+
+    auto mouse = root["mouse"];
+    mouse_.mode = lowerCopy(readOr(mouse, "mode", mouse_.mode));
+    mouse_.relativeScale = readOr(mouse, "relative_scale", mouse_.relativeScale);
+    mouse_.moveCooldownFrames = readOr(mouse, "move_cooldown_frames", mouse_.moveCooldownFrames);
 
     auto tensorrt = root["tensorrt"];
     tensorrt_.fp16 = readOr(tensorrt, "fp16", tensorrt_.fp16);
@@ -91,6 +115,9 @@ void AppConfig::load(fs::path const& path) {
     validatePositive("model.input_height", model_.inputHeight);
     validatePositive("inference.target_fps", inference_.targetFps);
     validatePositive("inference.max_detections", inference_.maxDetections);
+    validatePositive("inference.lost_target_frame_limit", inference_.lostTargetFrameLimit);
+    validatePositive("inference.log_interval_frames", inference_.logIntervalFrames);
+    validatePositive("inference.overlay_interval_frames", inference_.overlayIntervalFrames);
     validatePositive("capture.roi_width", capture_.roiWidth);
     validatePositive("capture.roi_height", capture_.roiHeight);
     validatePositive("tensorrt.workspace_mb", tensorrt_.workspaceMb);
@@ -99,4 +126,16 @@ void AppConfig::load(fs::path const& path) {
     }
 
     inference_.scoreThreshold = std::clamp(inference_.scoreThreshold, 0.0f, 1.0f);
+    if (inference_.minTargetWidthPx < 0.0f || inference_.minTargetHeightPx < 0.0f) {
+        throw std::runtime_error("inference min target size must be greater than or equal to 0");
+    }
+    if (mouse_.mode != "absolute" && mouse_.mode != "relative" && mouse_.mode != "both") {
+        throw std::runtime_error("mouse.mode must be absolute, relative, or both");
+    }
+    if (mouse_.relativeScale <= 0.0f) {
+        throw std::runtime_error("mouse.relative_scale must be greater than 0");
+    }
+    if (mouse_.moveCooldownFrames < 0) {
+        throw std::runtime_error("mouse.move_cooldown_frames must be greater than or equal to 0");
+    }
 }

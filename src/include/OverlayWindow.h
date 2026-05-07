@@ -15,7 +15,7 @@
  * @param height 覆盖窗口高度。
  * @return 创建成功的窗口句柄。
  */
-HWND createOverlayWindow(HINSTANCE instance, int width, int height);
+HWND createOverlayWindow(HINSTANCE instance, int x, int y, int width, int height);
 
 /**
  * @brief 在透明覆盖窗口上绘制检测框。
@@ -23,4 +23,4 @@ HWND createOverlayWindow(HINSTANCE instance, int width, int height);
  * @param boxes 需要绘制的检测框列表。
  * @note 无返回值。
  */
-void drawOverlay(HWND hwnd, std::vector<Box> const& boxes);
+void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& letterbox);

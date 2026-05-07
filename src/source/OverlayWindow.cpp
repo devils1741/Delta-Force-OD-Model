@@ -43,9 +43,18 @@ bool isEmpty(RECT const& rect) {
     return rect.right <= rect.left || rect.bottom <= rect.top;
 }
 
+RECT roiRect(LetterboxInfo const& letterbox) {
+    RECT rect{};
+    rect.left = letterbox.captureX;
+    rect.top = letterbox.captureY;
+    rect.right = letterbox.captureX + letterbox.captureW;
+    rect.bottom = letterbox.captureY + letterbox.captureH;
+    return rect;
+}
+
 } // namespace
 
-HWND createOverlayWindow(HINSTANCE instance, int width, int height) {
+HWND createOverlayWindow(HINSTANCE instance, int x, int y, int width, int height) {
     WNDCLASSW wc{};
     wc.lpfnWndProc = overlayWndProc;
     wc.hInstance = instance;
@@ -54,12 +63,12 @@ HWND createOverlayWindow(HINSTANCE instance, int width, int height) {
     RegisterClassW(&wc);
 
     HWND hwnd = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         wc.lpszClassName,
         L"TensorRT person detector overlay",
         WS_POPUP,
-        0,
-        0,
+        x,
+        y,
         width,
         height,
         nullptr,
@@ -71,6 +80,14 @@ HWND createOverlayWindow(HINSTANCE instance, int width, int height) {
     }
 
     SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
+    SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        x,
+        y,
+        width,
+        height,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
 
@@ -84,10 +101,20 @@ HWND createOverlayWindow(HINSTANCE instance, int width, int height) {
     return hwnd;
 }
 
-void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
+void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& letterbox) {
     static std::vector<Box> previousBoxes;
     static HBRUSH clearBrush = CreateSolidBrush(RGB(0, 0, 0));
-    static HPEN pen = CreatePen(PS_SOLID, 4, RGB(0, 255, 0));
+    static HPEN roiPen = CreatePen(PS_SOLID, 3, RGB(255, 0, 0));
+    static HPEN boxPen = CreatePen(PS_SOLID, 4, RGB(0, 255, 0));
+
+    SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        letterbox.desktopX,
+        letterbox.desktopY,
+        letterbox.screenW,
+        letterbox.screenH,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
     RECT client{};
     GetClientRect(hwnd, &client);
@@ -111,18 +138,24 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
         }
     }
 
-    if (dirtyRects.empty() && previousBoxes.empty() && boxes.empty()) {
-        ReleaseDC(hwnd, dc);
-        return;
+    RECT roi = roiRect(letterbox);
+    clampRect(roi, client);
+    if (!isEmpty(roi)) {
+        dirtyRects.push_back(roi);
     }
 
     for (auto const& rect : dirtyRects) {
         FillRect(dc, &rect, clearBrush);
     }
 
-    HGDIOBJ oldPen = SelectObject(dc, pen);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
 
+    HGDIOBJ oldPen = SelectObject(dc, roiPen);
+    if (!isEmpty(roi)) {
+        Rectangle(dc, roi.left, roi.top, roi.right, roi.bottom);
+    }
+
+    SelectObject(dc, boxPen);
     for (auto const& box : boxes) {
         int x1 = static_cast<int>(std::round(box.x1));
         int y1 = static_cast<int>(std::round(box.y1));

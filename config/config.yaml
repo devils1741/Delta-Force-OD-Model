@@ -8,11 +8,20 @@ inference:
   target_fps: 240
   score_threshold: 0.30
   max_detections: 300
+  lost_target_frame_limit: 3
+  min_target_width_px: 24
+  min_target_height_px: 48
+  log_interval_frames:
 
 capture:
   output_index: 0
-  roi_width: 640
+  roi_width: 960
   roi_height: 640
+
+mouse:
+  mode: relative
+  relative_scale: 0.20
+  move_cooldown_frames: 3
 
 tensorrt:
   fp16: true

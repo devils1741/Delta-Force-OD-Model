@@ -69,18 +69,20 @@ int LatestFrameQueue::chooseWritableSlot() const {
     return 0;
 }
 
-void LatestBoxes::publish(std::vector<Box> boxes) {
+void LatestBoxes::publish(std::vector<Box> boxes, LetterboxInfo letterbox) {
     std::lock_guard lock(mutex_);
     boxes_ = std::move(boxes);
+    letterbox_ = letterbox;
     sequence_++;
 }
 
-bool LatestBoxes::snapshot(uint64_t& lastSequence, std::vector<Box>& boxes) {
+bool LatestBoxes::snapshot(uint64_t& lastSequence, std::vector<Box>& boxes, LetterboxInfo& letterbox) {
     std::lock_guard lock(mutex_);
     if (sequence_ == lastSequence) {
         return false;
     }
     boxes = boxes_;
+    letterbox = letterbox_;
     lastSequence = sequence_;
     return true;
 }

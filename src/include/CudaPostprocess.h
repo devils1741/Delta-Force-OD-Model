@@ -23,6 +23,9 @@ public:
         float scoreThreshold,
         cudaStream_t stream);
 
+    int rawDetectionCount() const { return hostRawCount_; }
+    int teamFilteredCount() const { return hostTeamFilteredCount_; }
+
 private:
     struct CudaDeleter {
         void operator()(void* ptr) const;
@@ -33,6 +36,10 @@ private:
     int maxDetections_{};
     CudaPtr deviceBoxes_;
     CudaPtr deviceCount_;
+    CudaPtr deviceRawCount_;
+    CudaPtr deviceTeamFilteredCount_;
     std::vector<Box> hostBoxes_;
     int hostCount_{};
+    int hostRawCount_{};
+    int hostTeamFilteredCount_{};
 };
