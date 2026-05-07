@@ -26,7 +26,7 @@ LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 RECT boxDirtyRect(Box const& box) {
     RECT rect{};
     rect.left = static_cast<LONG>(std::floor(box.x1)) - 8;
-    rect.top = std::max<LONG>(0, static_cast<LONG>(std::floor(box.y1)) - 30);
+    rect.top = static_cast<LONG>(std::floor(box.y1)) - 8;
     rect.right = static_cast<LONG>(std::ceil(box.x2)) + 8;
     rect.bottom = static_cast<LONG>(std::ceil(box.y2)) + 8;
     return rect;
@@ -122,8 +122,6 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
 
     HGDIOBJ oldPen = SelectObject(dc, pen);
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(0, 255, 0));
 
     for (auto const& box : boxes) {
         int x1 = static_cast<int>(std::round(box.x1));
@@ -131,10 +129,6 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes) {
         int x2 = static_cast<int>(std::round(box.x2));
         int y2 = static_cast<int>(std::round(box.y2));
         Rectangle(dc, x1, y1, x2, y2);
-
-        wchar_t text[64]{};
-        swprintf_s(text, L"person %.2f", box.score);
-        TextOutW(dc, x1, std::max(0, y1 - 22), text, static_cast<int>(wcslen(text)));
     }
 
     SelectObject(dc, oldBrush);

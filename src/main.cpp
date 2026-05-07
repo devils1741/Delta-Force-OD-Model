@@ -140,6 +140,7 @@ int main() {
                     auto afterInfer = Clock::now();
                     auto detections = postprocessor.decodeDetections(
                         detector.deviceOutput(),
+                        detector.deviceInput(),
                         candidateCount,
                         letterbox,
                         config.inference().scoreThreshold,

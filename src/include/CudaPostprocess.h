@@ -17,6 +17,7 @@ public:
 
     std::vector<Box> decodeDetections(
         float const* deviceOutput,
+        float const* deviceInput,
         int candidateCount,
         LetterboxInfo const& letterbox,
         float scoreThreshold,

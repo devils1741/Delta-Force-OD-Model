@@ -11,8 +11,8 @@ inference:
 
 capture:
   output_index: 0
-  roi_width: 1280
-  roi_height: 1280
+  roi_width: 640
+  roi_height: 640
 
 tensorrt:
   fp16: true

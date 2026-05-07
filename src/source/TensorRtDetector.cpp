@@ -6,6 +6,7 @@
 #include <NvInferPlugin.h>
 #include <NvOnnxParser.h>
 
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -40,6 +41,24 @@ std::vector<char> readFile(fs::path const& path) {
         throw std::runtime_error("Cannot open file: " + path.string());
     }
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+}
+
+std::pair<void const*, size_t> enginePayload(std::vector<char> const& bytes) {
+    if (bytes.size() <= 4 || bytes[4] != '{') {
+        return {bytes.data(), bytes.size()};
+    }
+
+    auto metadataSize =
+        static_cast<uint32_t>(static_cast<unsigned char>(bytes[0])) |
+        (static_cast<uint32_t>(static_cast<unsigned char>(bytes[1])) << 8U) |
+        (static_cast<uint32_t>(static_cast<unsigned char>(bytes[2])) << 16U) |
+        (static_cast<uint32_t>(static_cast<unsigned char>(bytes[3])) << 24U);
+    auto payloadOffset = static_cast<size_t>(metadataSize) + 4ULL;
+    if (metadataSize == 0 || payloadOffset >= bytes.size()) {
+        return {bytes.data(), bytes.size()};
+    }
+
+    return {bytes.data() + payloadOffset, bytes.size() - payloadOffset};
 }
 
 /**
@@ -202,7 +221,11 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
 
     if (fs::exists(cachePath) && fs::last_write_time(cachePath) >= fs::last_write_time(onnxPath)) {
         auto bytes = readFile(cachePath);
-        if (auto* engine = runtime->deserializeCudaEngine(bytes.data(), bytes.size())) {
+        auto const [payloadData, payloadSize] = enginePayload(bytes);
+        if (payloadData != bytes.data()) {
+            std::cout << "Detected Ultralytics TensorRT metadata wrapper, using raw engine payload.\n";
+        }
+        if (auto* engine = runtime->deserializeCudaEngine(payloadData, payloadSize)) {
             std::cout << "Loaded TensorRT engine cache: " << cachePath << '\n';
             engine_.reset(engine);
             return;
