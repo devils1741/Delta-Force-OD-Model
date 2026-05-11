@@ -11,7 +11,7 @@ inference:
   lost_target_frame_limit: 3
   min_target_width_px: 24
   min_target_height_px: 48
-  log_interval_frames:
+  log_interval_frames: 100
 
 capture:
   output_index: 0
