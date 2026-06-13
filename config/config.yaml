@@ -5,10 +5,10 @@ model:
   input_height: 640
 
 inference:
-  target_fps: 240
-  score_threshold: 0.30
+  target_fps: 120
+  score_threshold: 0.3
   max_detections: 300
-  lost_target_frame_limit: 3
+  lost_target_frame_limit: 1
   min_target_width_px: 24
   min_target_height_px: 48
   log_interval_frames: 100
