@@ -104,6 +104,7 @@ std::string dimsToString(nvinfer1::Dims const& dims) {
     return text;
 }
 
+#if NV_TENSORRT_MAJOR < 11
 class CacheOnlyInt8Calibrator final : public nvinfer1::IInt8MinMaxCalibrator {
 public:
     explicit CacheOnlyInt8Calibrator(fs::path const& cachePath) : cachePath_(cachePath) {
@@ -143,6 +144,8 @@ private:
     fs::path cachePath_;
     std::vector<char> cache_;
 };
+#endif
+
 
 } // namespace
 
@@ -241,9 +244,13 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         throw std::runtime_error("Failed to create TensorRT builder");
     }
 
+#if NV_TENSORRT_MAJOR >= 11
+    TrtUniquePtr<nvinfer1::INetworkDefinition> network(builder->createNetworkV2(0U));
+#else
     uint32_t const explicitBatch =
         1U << static_cast<uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
     TrtUniquePtr<nvinfer1::INetworkDefinition> network(builder->createNetworkV2(explicitBatch));
+#endif
     if (!network) {
         throw std::runtime_error("Failed to create TensorRT network");
     }
@@ -267,6 +274,11 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
     config->setMemoryPoolLimit(
         nvinfer1::MemoryPoolType::kWORKSPACE,
         static_cast<size_t>(trt.workspaceMb) * 1024ULL * 1024ULL);
+#if NV_TENSORRT_MAJOR >= 11
+    if (trt.fp16 || trt.int8) {
+        throw std::runtime_error("TensorRT 11 requires explicitly typed FP16 or Q/DQ INT8 ONNX. Load an exported .engine, or disable fp16/int8 for FP32 ONNX building.");
+    }
+#else
     if (trt.fp16) {
         config->setFlag(nvinfer1::BuilderFlag::kFP16);
     }
@@ -277,6 +289,7 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         config->setInt8Calibrator(int8Calibrator.get());
         std::cout << "Using INT8 calibration cache: " << trt.calibrationCachePath << '\n';
     }
+#endif
     TrtUniquePtr<nvinfer1::IHostMemory> serialized(builder->buildSerializedNetwork(*network, *config));
     if (!serialized) {
         throw std::runtime_error("Failed to build TensorRT engine");
@@ -317,6 +330,8 @@ void TensorRtDetector::discoverTensorShapes() {
 
     inputH_ = static_cast<int>(inputDims.d[2]);
     inputW_ = static_cast<int>(inputDims.d[3]);
+    if (outputDims.nbDims != 3 || outputDims.d[0] != 1 || outputDims.d[1] != 6 || outputDims.d[2] <= 0)
+        throw std::runtime_error("Expected raw two-class output [1,6,N], got " + dimsToString(outputDims));
     outputCount_ = volume(outputDims);
 
     auto const& model = AppConfig::instance().model();

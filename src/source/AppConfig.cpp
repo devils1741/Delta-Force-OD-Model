@@ -94,11 +94,13 @@ void AppConfig::load(fs::path const& path) {
         readOr(inference, "overlay_interval_frames", inference_.overlayIntervalFrames);
 
     auto capture = root["capture"];
+    capture_.showRegionBox = readOr(capture, "show_region_box", capture_.showRegionBox);
     capture_.outputIndex = readOr(capture, "output_index", capture_.outputIndex);
     capture_.roiWidth = readOr(capture, "roi_width", capture_.roiWidth);
     capture_.roiHeight = readOr(capture, "roi_height", capture_.roiHeight);
 
     auto mouse = root["mouse"];
+    mouse_.enabled = readOr(mouse, "enabled", mouse_.enabled);
     mouse_.mode = lowerCopy(readOr(mouse, "mode", mouse_.mode));
     mouse_.relativeScale = readOr(mouse, "relative_scale", mouse_.relativeScale);
     mouse_.moveCooldownFrames = readOr(mouse, "move_cooldown_frames", mouse_.moveCooldownFrames);

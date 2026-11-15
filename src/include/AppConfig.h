@@ -37,12 +37,14 @@ struct InferenceConfig {
  * 指定采集的显示器索引以及中心ROI的宽高。默认是1600*900
  */
 struct CaptureConfig {
+    bool showRegionBox{true};
     int outputIndex{0};
     int roiWidth{1600};
     int roiHeight{900};
 };
 
 struct MouseConfig {
+    bool enabled{true};
     std::string mode{"relative"};
     float relativeScale{1.0f};
     int moveCooldownFrames{12};

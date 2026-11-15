@@ -7,6 +7,7 @@
 #include "Detection.h"
 #include "DxgiScreenCapture.h"
 #include "OverlayWindow.h"
+#include "MouseController.h"
 #include "RealtimePipeline.h"
 #include "TensorRtDetector.h"
 
@@ -17,7 +18,6 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
-#include <cmath>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -26,13 +26,20 @@
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 
+// CUDA events are recorded on the inference stream; postprocessing already synchronizes it.
+struct PerfEvents {
+    cudaEvent_t captureStart{}, captureEnd{}, inferEnd{};
+    PerfEvents() {
+        if (cudaEventCreate(&captureStart) != cudaSuccess ||
+            cudaEventCreate(&captureEnd) != cudaSuccess ||
+            cudaEventCreate(&inferEnd) != cudaSuccess)
+            throw std::runtime_error("Cannot create performance CUDA events");
+    }
+    ~PerfEvents() { cudaEventDestroy(captureStart); cudaEventDestroy(captureEnd); cudaEventDestroy(inferEnd); }
+};
+
 namespace {
 
-#ifndef NDEBUG
-constexpr bool kLogFrameTimings = true;
-#else
-constexpr bool kLogFrameTimings = false;
-#endif
 /**
  * @brief 启用进程DPI感知，避免高DPI屏幕下坐标缩放错误。
  * @note 无返回值。
@@ -86,113 +93,6 @@ void removeSmallTargets(std::vector<Box>& boxes, InferenceConfig const& inferenc
         boxes.end());
 }
 
-bool isLeftButtonRequested() {
-    SHORT state = GetAsyncKeyState(VK_LBUTTON);
-    return (state & 0x8000) != 0;
-}
-
-bool aimFromScreenCenter(MouseConfig const& mouse) {
-    return mouse.mode != "absolute";
-}
-
-int nearestTargetIndexToPoint(
-    std::vector<Box> const& boxes,
-    POINT const& point) {
-    int bestIndex = -1;
-    double bestDistanceSq = 0.0;
-    for (size_t i = 0; i < boxes.size(); ++i) {
-        Box const& box = boxes[i];
-        double centerX = (box.x1 + box.x2) * 0.5;
-        double centerY = (box.y1 + box.y2) * 0.5;
-        double dx = centerX - point.x;
-        double dy = centerY - point.y;
-        double distanceSq = dx * dx + dy * dy;
-        if (bestIndex < 0 || distanceSq < bestDistanceSq) {
-            bestIndex = static_cast<int>(i);
-            bestDistanceSq = distanceSq;
-        }
-    }
-    return bestIndex;
-}
-
-POINT targetCenter(Box const& target) {
-    return POINT{
-        static_cast<LONG>(std::lround((target.x1 + target.x2) * 0.5f)),
-        static_cast<LONG>(std::lround((target.y1 + target.y2) * 0.5f)),
-    };
-}
-
-POINT targetGlobalCenter(Box const& target, LetterboxInfo const& letterbox) {
-    POINT center = targetCenter(target);
-    return POINT{
-        center.x + letterbox.desktopX,
-        center.y + letterbox.desktopY,
-    };
-}
-
-struct MouseMovePlan {
-    POINT targetGlobal{};
-    float errorX = 0.0f;
-    float errorY = 0.0f;
-    POINT delta{};
-};
-
-MouseMovePlan planMouseMove(Box const& target, LetterboxInfo const& letterbox, POINT const& cursor) {
-    MouseMovePlan plan{};
-    plan.targetGlobal = targetGlobalCenter(target, letterbox);
-    plan.errorX = static_cast<float>(plan.targetGlobal.x - cursor.x);
-    plan.errorY = static_cast<float>(plan.targetGlobal.y - cursor.y);
-
-    constexpr float kDeadzonePx = 2.0f;
-    if (std::fabs(plan.errorX) <= kDeadzonePx && std::fabs(plan.errorY) <= kDeadzonePx) {
-        return plan;
-    }
-
-    int dx = static_cast<int>(std::lround(plan.errorX));
-    int dy = static_cast<int>(std::lround(plan.errorY));
-    if (dx == 0 && std::fabs(plan.errorX) > kDeadzonePx) {
-        dx = plan.errorX > 0.0f ? 1 : -1;
-    }
-    if (dy == 0 && std::fabs(plan.errorY) > kDeadzonePx) {
-        dy = plan.errorY > 0.0f ? 1 : -1;
-    }
-    plan.delta = POINT{dx, dy};
-    return plan;
-}
-
-bool sendRelativeMouseMove(POINT const& delta, MouseConfig const& mouse) {
-    INPUT input{};
-    input.type = INPUT_MOUSE;
-    input.mi.dx = static_cast<LONG>(std::lround(static_cast<float>(delta.x) * mouse.relativeScale));
-    input.mi.dy = static_cast<LONG>(std::lround(static_cast<float>(delta.y) * mouse.relativeScale));
-    input.mi.dwFlags = MOUSEEVENTF_MOVE;
-    if (input.mi.dx == 0 && delta.x != 0) {
-        input.mi.dx = delta.x > 0 ? 1 : -1;
-    }
-    if (input.mi.dy == 0 && delta.y != 0) {
-        input.mi.dy = delta.y > 0 ? 1 : -1;
-    }
-    return SendInput(1, &input, sizeof(INPUT)) == 1;
-}
-
-bool applyMouseMovePlan(
-    MouseMovePlan const& plan,
-    POINT const& referencePoint,
-    MouseConfig const& mouse) {
-    if (plan.delta.x == 0 && plan.delta.y == 0) {
-        return true;
-    }
-    if (mouse.mode == "absolute") {
-        return SetCursorPos(referencePoint.x + plan.delta.x, referencePoint.y + plan.delta.y) != FALSE;
-    }
-    if (mouse.mode == "both") {
-        bool absoluteOk =
-            SetCursorPos(referencePoint.x + plan.delta.x, referencePoint.y + plan.delta.y) != FALSE;
-        bool relativeOk = sendRelativeMouseMove(plan.delta, mouse);
-        return absoluteOk || relativeOk;
-    }
-    return sendRelativeMouseMove(plan.delta, mouse);
-}
 
 } // namespace
 
@@ -219,9 +119,7 @@ int main() {
 
         TensorRtDetector detector(onnxPath, enginePath);
         CudaPostprocessor postprocessor(config.inference().maxDetections);
-        int candidateCount = std::min(
-            config.inference().maxDetections,
-            static_cast<int>(detector.outputCount() / 6));
+        int candidateCount = static_cast<int>(detector.outputCount() / 6);
 
         DxgiScreenCapture capture(detector.inputW(), detector.inputH());
         std::cout << "Primary display: " << capture.screenW() << "x" << capture.screenH() << '\n';
@@ -260,19 +158,29 @@ int main() {
             try {
                 SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
                 uint64_t frameIndex = 0;
+                PerfEvents perf;
+                auto windowStart = Clock::now();
+                double totalSum=0, totalMax=0, capSum=0, gpuCapSum=0, gpuInferSum=0, postSum=0;
+                uint64_t windowFrames=0, captureMisses=0;
+                std::cout << "[perf] timings in ms; GPU capture includes stream idle/capture wait; post_cpu includes GPU wait.\n";
                 auto nextFrameTime = Clock::now();
                 while (running.load(std::memory_order_relaxed)) {
                     nextFrameTime += std::chrono::microseconds(1'000'000 / config.inference().targetFps);
 
                     auto start = Clock::now();
+                    cudaEventRecord(perf.captureStart, detector.stream());
                     if (!capture.captureToDevice(detector.deviceInput(), detector.stream())) {
-                        Sleep(1);
+                        ++captureMisses;
+                        // Request 10 us; actual wake-up latency depends on Windows scheduling.
+                        std::this_thread::sleep_for(std::chrono::microseconds(10));
                         continue;
                     }
 
+                    cudaEventRecord(perf.captureEnd, detector.stream());
                     auto afterCapture = Clock::now();
                     LetterboxInfo frameLetterbox = capture.letterbox();
                     detector.enqueueDeviceInput();
+                    cudaEventRecord(perf.inferEnd, detector.stream());
                     auto afterInfer = Clock::now();
                     auto detections = postprocessor.decodeDetections(
                         detector.deviceOutput(),
@@ -285,32 +193,26 @@ int main() {
                     removeSmallTargets(detections, config.inference());
                     int smallFiltered = beforeSmallFilter - static_cast<int>(detections.size());
 
-                    if constexpr (kLogFrameTimings) {
-                        auto afterPost = Clock::now();
-                        auto captureMs =
-                            std::chrono::duration<double, std::milli>(afterCapture - start).count();
-                        auto inferMs =
-                            std::chrono::duration<double, std::milli>(afterInfer - afterCapture).count();
-                        auto postMs =
-                            std::chrono::duration<double, std::milli>(afterPost - afterInfer).count();
-                        auto totalMs =
-                            std::chrono::duration<double, std::milli>(afterPost - start).count();
-                        bool shouldLogFrame =
-                            !detections.empty() &&
-                            (config.inference().logIntervalFrames <= 1 ||
-                             frameIndex % static_cast<uint64_t>(config.inference().logIntervalFrames) == 0);
-                        if (shouldLogFrame) {
-                            std::cout << "frame=" << frameIndex
-                                      << " ms=" << std::fixed << std::setprecision(2) << totalMs
-                                      << " cap=" << captureMs
-                                      << " infer=" << inferMs
-                                      << " post=" << postMs
-                                      << " raw=" << postprocessor.rawDetectionCount()
-                                      << " det=" << detections.size()
-                                      << " team_filtered=" << postprocessor.teamFilteredCount()
-                                      << " small_filtered=" << smallFiltered
-                                      << '\n';
-                        }
+                    auto afterPost = Clock::now();
+                    auto ms=[](auto a, auto b) { return std::chrono::duration<double,std::milli>(b-a).count(); };
+                    float gpuCapture=0, gpuInfer=0;
+                    if(cudaEventElapsedTime(&gpuCapture,perf.captureStart,perf.captureEnd)!=cudaSuccess ||
+                       cudaEventElapsedTime(&gpuInfer,perf.captureEnd,perf.inferEnd)!=cudaSuccess)
+                        throw std::runtime_error("Cannot read performance CUDA events");
+                    double total=ms(start,afterPost);
+                    totalSum+=total; totalMax=std::max(totalMax,total);
+                    capSum+=ms(start,afterCapture); gpuCapSum+=gpuCapture;
+                    gpuInferSum+=gpuInfer; postSum+=ms(afterInfer,afterPost); ++windowFrames;
+                    if(ms(windowStart,afterPost)>=2000) {
+                        std::cout << "[perf] frames=" << windowFrames
+                                  << " fps=" << std::fixed << std::setprecision(2) << windowFrames*1000.0/ms(windowStart,afterPost)
+                                  << " total_avg=" << totalSum/windowFrames << " total_max=" << totalMax
+                                  << " capture_cpu=" << capSum/windowFrames << " capture_gpu_span=" << gpuCapSum/windowFrames
+                                  << " infer_gpu=" << gpuInferSum/windowFrames << " post_cpu_wait=" << postSum/windowFrames
+                                  << " capture_misses=" << captureMisses << " raw=" << postprocessor.rawDetectionCount()
+                                  << " final=" << detections.size() << " small_filtered=" << smallFiltered << std::endl;
+                        windowStart=afterPost; windowFrames=0; captureMisses=0;
+                        totalSum=totalMax=capSum=gpuCapSum=gpuInferSum=postSum=0;
                     }
                     frameIndex++;
 
@@ -333,7 +235,7 @@ int main() {
 
         MSG msg{};
         uint64_t drawnSequence = 0;
-        int moveCooldownFramesRemaining = 0;
+        MouseController mouseController(config.mouse());
         while (running.load(std::memory_order_relaxed)) {
             DWORD waitResult = MsgWaitForMultipleObjectsEx(
                 1,
@@ -354,54 +256,22 @@ int main() {
             std::vector<Box> boxes;
             LetterboxInfo drawLetterbox{};
             if (shouldDraw && latestBoxes.snapshot(drawnSequence, boxes, drawLetterbox)) {
-                bool leftRequested = isLeftButtonRequested();
-                POINT cursor{};
-                bool hasCursor = GetCursorPos(&cursor) != FALSE;
-                POINT screenCenter{
-                    drawLetterbox.screenW / 2,
-                    drawLetterbox.screenH / 2,
-                };
-                POINT screenCenterGlobal{
-                    drawLetterbox.desktopX + screenCenter.x,
-                    drawLetterbox.desktopY + screenCenter.y,
-                };
-                bool useScreenCenterAim = aimFromScreenCenter(config.mouse());
-                POINT aimReferenceGlobal = useScreenCenterAim ? screenCenterGlobal : cursor;
-                POINT aimReferenceLocal{
-                    aimReferenceGlobal.x - drawLetterbox.desktopX,
-                    aimReferenceGlobal.y - drawLetterbox.desktopY,
-                };
-                bool canMoveThisFrame = moveCooldownFramesRemaining <= 0;
-                int selectedTargetIndex = leftRequested && hasCursor && canMoveThisFrame
-                    ? nearestTargetIndexToPoint(boxes, aimReferenceLocal)
-                    : -1;
-                if (selectedTargetIndex >= 0) {
-                    MouseMovePlan selectedMovePlan = planMouseMove(
-                        boxes[static_cast<size_t>(selectedTargetIndex)],
-                        drawLetterbox,
-                        aimReferenceGlobal);
-                    bool moveSucceeded =
-                        applyMouseMovePlan(selectedMovePlan, aimReferenceGlobal, config.mouse());
-                    if (moveSucceeded) {
-                        moveCooldownFramesRemaining = config.mouse().moveCooldownFrames;
-                    }
-                    if constexpr (kLogFrameTimings) {
-                        std::cout << "move frame=" << drawnSequence
-                                  << " target=" << selectedTargetIndex
-                                  << " dx=" << selectedMovePlan.delta.x
-                                  << " dy=" << selectedMovePlan.delta.y
-                                  << " ok=" << (moveSucceeded ? 1 : 0)
-                                  << '\n';
-                    }
-                } else if (moveCooldownFramesRemaining > 0) {
-                    --moveCooldownFramesRemaining;
-                }
+                mouseController.update(boxes, drawLetterbox, drawnSequence);
                 bool shouldDrawOverlay =
                     config.inference().overlayIntervalFrames <= 1 ||
                     drawnSequence % static_cast<uint64_t>(config.inference().overlayIntervalFrames) == 0 ||
                     boxes.empty();
                 if (shouldDrawOverlay) {
+                    auto drawStart=Clock::now();
                     drawOverlay(overlay, boxes, drawLetterbox);
+                    static auto lastDrawLog=Clock::now();
+                    auto drawEnd=Clock::now();
+                    if(drawEnd-lastDrawLog>=std::chrono::seconds(2)) {
+                        std::cout << "[draw] sequence=" << drawnSequence << " boxes=" << boxes.size()
+                                  << " submit_ms=" << std::chrono::duration<double,std::milli>(drawEnd-drawStart).count()
+                                  << " (CPU submission, excludes compositor/display latency)" << std::endl;
+                        lastDrawLog=drawEnd;
+                    }
                 }
             }
         }

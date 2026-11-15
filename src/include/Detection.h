@@ -13,6 +13,7 @@ struct Box {
     float x2{};
     float y2{};
     float score{};
+    int classId{};
 };
 
 /**

@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 4.2)
+# RTX 4070 SUPER: emit native SM89 code to avoid PTX JIT driver requirements.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 89-real)
+endif()
 project(delta LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(TENSORRT_ROOT "C:/Program Files/TensorRT-10.16.1.11" CACHE PATH "TensorRT installation directory")
+set(TENSORRT_ROOT "C:/Program Files/TensorRT-11.4.0.106" CACHE PATH "TensorRT installation directory")
 
 include(FetchContent)
 
@@ -24,6 +28,7 @@ endif()
 
 add_executable(delta
         src/main.cpp
+        src/source/MouseController.cpp
         src/source/AppConfig.cpp
         src/source/Detection.cpp
         src/source/CudaPostprocess.cu
@@ -34,6 +39,7 @@ add_executable(delta
         src/source/RealtimePipeline.cpp
         src/source/ScreenCapture.cpp
         src/source/TensorRtDetector.cpp
+        src/include/MouseController.h
         src/include/AppConfig.h
         src/include/Detection.h
         src/include/CudaPostprocess.h
@@ -59,20 +65,20 @@ target_link_directories(delta PRIVATE
 target_link_libraries(delta PRIVATE
         CUDA::cudart_static
         yaml-cpp::yaml-cpp
-        nvinfer_10
-        nvonnxparser_10
-        nvinfer_plugin_10
+        nvinfer_11
+        nvonnxparser_11
+        nvinfer_plugin_11
         user32
         gdi32
         d3d11
         dxgi)
 
 foreach(tensorrt_dll IN ITEMS
-        nvinfer_10.dll
-        nvinfer_plugin_10.dll
-        nvonnxparser_10.dll
-        nvinfer_builder_resource_sm89_10.dll
-        nvinfer_builder_resource_ptx_10.dll)
+        nvinfer_11.dll
+        nvinfer_plugin_11.dll
+        nvonnxparser_11.dll
+        nvinfer_builder_resource_sm89_11.dll
+        nvinfer_builder_resource_ptx_11.dll)
     add_custom_command(TARGET delta POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${TENSORRT_ROOT}/bin/${tensorrt_dll}"
@@ -96,3 +102,5 @@ if (DOXYGEN_FOUND)
 else()
     message(STATUS "Doxygen not found; install Doxygen to enable the docs target.")
 endif()
+
+add_subdirectory(ut/test_mouse_controll)

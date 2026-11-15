@@ -1,4 +1,5 @@
 #include "OverlayWindow.h"
+#include "AppConfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -151,7 +152,7 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& 
     HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
 
     HGDIOBJ oldPen = SelectObject(dc, roiPen);
-    if (!isEmpty(roi)) {
+    if (AppConfig::instance().capture().showRegionBox && !isEmpty(roi)) {
         Rectangle(dc, roi.left, roi.top, roi.right, roi.bottom);
     }
 

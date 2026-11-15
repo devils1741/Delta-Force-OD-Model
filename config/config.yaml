@@ -1,12 +1,12 @@
 model:
   onnx_path: weights/best_640.onnx
   engine_path: weights/best_640.engine
-  input_width: 640
-  input_height: 640
+  input_width: 1280
+  input_height: 1280
 
 inference:
-  target_fps: 120
-  score_threshold: 0.3
+  target_fps: 500
+  score_threshold: 0.5
   max_detections: 300
   lost_target_frame_limit: 1
   min_target_width_px: 24
@@ -14,11 +14,13 @@ inference:
   log_interval_frames: 100
 
 capture:
+  show_region_box: false # 是否显示截屏区域边框
   output_index: 0
-  roi_width: 960
-  roi_height: 640
+  roi_width: 1280
+  roi_height: 1280
 
 mouse:
+  enabled: false # 是否启用鼠标自动操作
   mode: relative
   relative_scale: 0.20
   move_cooldown_frames: 3
