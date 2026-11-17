@@ -5,6 +5,12 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 project(delta LANGUAGES CXX CUDA)
 
+# Embed the MSVC and CUDA runtimes in all targets, including local dependencies.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
+set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "Build yaml-cpp statically" FORCE)
+set(YAML_MSVC_SHARED_RT OFF CACHE BOOL "Use the static MSVC runtime for yaml-cpp" FORCE)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -13,16 +19,24 @@ set(TENSORRT_ROOT "C:/Program Files/TensorRT-11.4.0.106" CACHE PATH "TensorRT in
 include(FetchContent)
 
 find_package(CUDAToolkit REQUIRED)
-find_package(yaml-cpp CONFIG QUIET)
+# Prefer the bundled source so its runtime linkage matches the application.
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/yaml-cpp-0.8.0/CMakeLists.txt")
+    find_package(yaml-cpp CONFIG QUIET)
+endif()
 
-if (NOT yaml-cpp_FOUND)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/yaml-cpp-0.8.0/CMakeLists.txt" OR NOT yaml-cpp_FOUND)
     set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
     set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/yaml-cpp-0.8.0/CMakeLists.txt")
+        FetchContent_Declare(yaml-cpp
+            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/yaml-cpp-0.8.0")
+    else()
     FetchContent_Declare(
             yaml-cpp
             GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
             GIT_TAG 0.8.0)
+    endif()
     FetchContent_MakeAvailable(yaml-cpp)
 endif()
 
@@ -72,6 +86,25 @@ target_link_libraries(delta PRIVATE
         gdi32
         d3d11
         dxgi)
+
+# Keep runtime resources beside the executable for Explorer/Release launches.
+add_custom_command(TARGET delta POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:delta>/config" "$<TARGET_FILE_DIR:delta>/weights"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/config/config.yaml"
+        "$<TARGET_FILE_DIR:delta>/config/config.yaml"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.onnx"
+        "$<TARGET_FILE_DIR:delta>/weights/best.onnx"
+        VERBATIM)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.engine")
+    add_custom_command(TARGET delta POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.engine"
+            "$<TARGET_FILE_DIR:delta>/weights/best.engine"
+            VERBATIM)
+endif()
 
 foreach(tensorrt_dll IN ITEMS
         nvinfer_11.dll

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cwchar>
 #include <stdexcept>
 #include <vector>
 
@@ -31,6 +32,18 @@ RECT boxDirtyRect(Box const& box) {
     rect.right = static_cast<LONG>(std::ceil(box.x2)) + 8;
     rect.bottom = static_cast<LONG>(std::ceil(box.y2)) + 8;
     return rect;
+}
+
+RECT confidenceRect(HDC dc, Box const& box, RECT const& client) {
+    wchar_t text[32]{};
+    swprintf_s(text, L"%.1f%%", box.score * 100.0f);
+    SIZE size{};
+    GetTextExtentPoint32W(dc, text, static_cast<int>(wcslen(text)), &size);
+    LONG x = std::clamp(static_cast<LONG>(std::round(box.x1)),
+        client.left, std::max(client.left, client.right - size.cx));
+    LONG y = std::clamp(static_cast<LONG>(std::round(box.y1)) - size.cy - 4,
+        client.top, std::max(client.top, client.bottom - size.cy));
+    return RECT{x, y, x + size.cx, y + size.cy};
 }
 
 void clampRect(RECT& rect, RECT const& bounds) {
@@ -126,6 +139,8 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& 
 
     for (auto const& box : previousBoxes) {
         RECT rect = boxDirtyRect(box);
+        RECT label = confidenceRect(dc, box, client);
+        UnionRect(&rect, &rect, &label);
         clampRect(rect, client);
         if (!isEmpty(rect)) {
             dirtyRects.push_back(rect);
@@ -133,6 +148,8 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& 
     }
     for (auto const& box : boxes) {
         RECT rect = boxDirtyRect(box);
+        RECT label = confidenceRect(dc, box, client);
+        UnionRect(&rect, &rect, &label);
         clampRect(rect, client);
         if (!isEmpty(rect)) {
             dirtyRects.push_back(rect);
@@ -156,6 +173,8 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& 
         Rectangle(dc, roi.left, roi.top, roi.right, roi.bottom);
     }
 
+    int oldBkMode = SetBkMode(dc, TRANSPARENT);
+    COLORREF oldTextColor = SetTextColor(dc, RGB(0, 255, 0));
     SelectObject(dc, boxPen);
     for (auto const& box : boxes) {
         int x1 = static_cast<int>(std::round(box.x1));
@@ -163,8 +182,14 @@ void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& 
         int x2 = static_cast<int>(std::round(box.x2));
         int y2 = static_cast<int>(std::round(box.y2));
         Rectangle(dc, x1, y1, x2, y2);
+        wchar_t text[32]{};
+        swprintf_s(text, L"%.1f%%", box.score * 100.0f);
+        RECT label = confidenceRect(dc, box, client);
+        TextOutW(dc, label.left, label.top, text, static_cast<int>(wcslen(text)));
     }
 
+    SetTextColor(dc, oldTextColor);
+    SetBkMode(dc, oldBkMode);
     SelectObject(dc, oldBrush);
     SelectObject(dc, oldPen);
     ReleaseDC(hwnd, dc);

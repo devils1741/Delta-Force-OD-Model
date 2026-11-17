@@ -7,17 +7,45 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <future>
+#include <stdexcept>
+#include <vector>
 
 namespace {
-#ifndef NDEBUG
-constexpr bool kLogMoves = true;
-#else
-constexpr bool kLogMoves = false;
-#endif
+struct ButtonEventState {
+    std::atomic<bool>* down;
+    std::atomic<uint64_t>* rawEvents;
+    std::atomic<uint64_t>* downEvents;
+    std::atomic<uint64_t>* upEvents;
+    std::atomic<uint64_t>* injectedEvents;
+    std::atomic<uint64_t>* injectedDown;
+    std::atomic<uint64_t>* injectedUp;
+};
 
-bool isLeftButtonRequested() {
-    SHORT state = GetAsyncKeyState(VK_LBUTTON);
-    return (state & 0x8000) != 0;
+thread_local ButtonEventState* hookButtonState = nullptr;
+
+LRESULT CALLBACK mouseButtonHook(int code, WPARAM message, LPARAM data) {
+    if (code == HC_ACTION && hookButtonState) {
+        auto const* event = reinterpret_cast<MSLLHOOKSTRUCT const*>(data);
+        auto& state = *hookButtonState;
+        if (event->flags & LLMHF_INJECTED) {
+            ++*state.injectedEvents;
+            if (message == WM_LBUTTONDOWN) ++*state.injectedDown;
+            if (message == WM_LBUTTONUP) ++*state.injectedUp;
+        }
+        // Only physical input controls the trigger; never consume other apps' events.
+        if (!(event->flags & LLMHF_INJECTED)) {
+            ++*state.rawEvents;
+            if (message == WM_LBUTTONDOWN) {
+                ++*state.downEvents;
+                state.down->store(true);
+            } else if (message == WM_LBUTTONUP) {
+                ++*state.upEvents;
+                state.down->store(false);
+            }
+        }
+    }
+    return CallNextHookEx(nullptr, code, message, data);
 }
 
 bool aimFromScreenCenter(MouseConfig const& mouse) {
@@ -72,42 +100,41 @@ MouseMovePlan planMouseMove(Box const& target, LetterboxInfo const& letterbox, P
     plan.errorX = static_cast<float>(plan.targetGlobal.x - cursor.x);
     plan.errorY = static_cast<float>(plan.targetGlobal.y - cursor.y);
 
-    constexpr float kDeadzonePx = 2.0f;
-    if (std::fabs(plan.errorX) <= kDeadzonePx && std::fabs(plan.errorY) <= kDeadzonePx) {
-        return plan;
-    }
-
     int dx = static_cast<int>(std::lround(plan.errorX));
     int dy = static_cast<int>(std::lround(plan.errorY));
-    if (dx == 0 && std::fabs(plan.errorX) > kDeadzonePx) {
-        dx = plan.errorX > 0.0f ? 1 : -1;
-    }
-    if (dy == 0 && std::fabs(plan.errorY) > kDeadzonePx) {
-        dy = plan.errorY > 0.0f ? 1 : -1;
-    }
     plan.delta = POINT{dx, dy};
     return plan;
 }
 
-bool sendRelativeMouseMove(POINT const& delta, MouseConfig const& mouse) {
+POINT scaledRelativeDelta(POINT const& delta, MouseConfig const& mouse) {
+    POINT scaled{
+        static_cast<LONG>(std::lround(static_cast<float>(delta.x) * mouse.relativeScale)),
+        static_cast<LONG>(std::lround(static_cast<float>(delta.y) * mouse.relativeScale)),
+    };
+    if (scaled.x == 0 && delta.x != 0) {
+        scaled.x = delta.x > 0 ? 1 : -1;
+    }
+    if (scaled.y == 0 && delta.y != 0) {
+        scaled.y = delta.y > 0 ? 1 : -1;
+    }
+    return scaled;
+}
+
+bool sendRelativeMouseMove(POINT const& delta, MouseConfig const& mouse, POINT& relativeDelta) {
+    relativeDelta = scaledRelativeDelta(delta, mouse);
     INPUT input{};
     input.type = INPUT_MOUSE;
-    input.mi.dx = static_cast<LONG>(std::lround(static_cast<float>(delta.x) * mouse.relativeScale));
-    input.mi.dy = static_cast<LONG>(std::lround(static_cast<float>(delta.y) * mouse.relativeScale));
+    input.mi.dx = relativeDelta.x;
+    input.mi.dy = relativeDelta.y;
     input.mi.dwFlags = MOUSEEVENTF_MOVE;
-    if (input.mi.dx == 0 && delta.x != 0) {
-        input.mi.dx = delta.x > 0 ? 1 : -1;
-    }
-    if (input.mi.dy == 0 && delta.y != 0) {
-        input.mi.dy = delta.y > 0 ? 1 : -1;
-    }
     return SendInput(1, &input, sizeof(INPUT)) == 1;
 }
 
 bool applyMouseMovePlan(
     MouseMovePlan const& plan,
     POINT const& referencePoint,
-    MouseConfig const& mouse) {
+    MouseConfig const& mouse,
+    POINT& relativeDelta) {
     if (!mouse.enabled) {
         return false;
     }
@@ -122,20 +149,64 @@ bool applyMouseMovePlan(
         if (SetCursorPos(referencePoint.x + plan.delta.x, referencePoint.y + plan.delta.y)) {
             return true;
         }
-        return sendRelativeMouseMove(plan.delta, mouse);
+        return sendRelativeMouseMove(plan.delta, mouse, relativeDelta);
     }
-    return sendRelativeMouseMove(plan.delta, mouse);
+    return sendRelativeMouseMove(plan.delta, mouse, relativeDelta);
 }
 
 } // namespace
 
-MouseController::MouseController(MouseConfig const& config) : config_(config) {}
+MouseController::MouseController(MouseConfig const& config) : config_(config) {
+    std::promise<DWORD> ready;
+    auto result = ready.get_future();
+    inputThread_ = std::thread([this, ready = std::move(ready)]() mutable {
+        ButtonEventState state{&leftButtonDown_,
+            &rawMouseEvents_, &leftDownEvents_, &leftUpEvents_,
+            &injectedMouseEvents_, &injectedDownEvents_, &injectedUpEvents_};
+        hookButtonState = &state;
+        MSG message{};
+        // Create the thread message queue before publishing its ID.
+        PeekMessageW(&message, nullptr, 0, 0, PM_NOREMOVE);
+        HHOOK hook = SetWindowsHookExW(WH_MOUSE_LL, mouseButtonHook,
+            GetModuleHandleW(nullptr), 0);
+        if (!hook) {
+            hookButtonState = nullptr;
+            ready.set_value(0);
+            return;
+        }
+        leftButtonDown_.store((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+        ready.set_value(GetCurrentThreadId());
+        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        UnhookWindowsHookEx(hook);
+        hookButtonState = nullptr;
+        leftButtonDown_.store(false);
+    });
+    inputThreadId_ = result.get();
+    if (!inputThreadId_) {
+        inputThread_.join();
+        throw std::runtime_error("Failed to install low-level mouse hook");
+    }
+    std::cout << "[mouse-input] listener=low-level-hook ready=1\n";
+}
+
+MouseController::~MouseController() {
+    if (inputThreadId_) PostThreadMessageW(inputThreadId_, WM_QUIT, 0, 0);
+    if (inputThread_.joinable()) inputThread_.join();
+}
 
 void MouseController::update(std::vector<Box> const& boxes,
                              LetterboxInfo const& letterbox, uint64_t sequence) {
-    bool leftRequested = isLeftButtonRequested();
+    lastInputError_ = 0;
+    lastRelativeDx_ = 0;
+    lastRelativeDy_ = 0;
+    bool leftRequested = leftButtonDown_.load();
+    bool useScreenCenterAim = aimFromScreenCenter(config_);
     POINT cursor{};
-    bool hasCursor = GetCursorPos(&cursor) != FALSE;
+    // Relative camera control uses the display center, not the desktop cursor.
+    bool hasCursor = useScreenCenterAim || GetCursorPos(&cursor) != FALSE;
     POINT screenCenter{
         letterbox.screenW / 2,
         letterbox.screenH / 2,
@@ -144,7 +215,6 @@ void MouseController::update(std::vector<Box> const& boxes,
         letterbox.desktopX + screenCenter.x,
         letterbox.desktopY + screenCenter.y,
     };
-    bool useScreenCenterAim = aimFromScreenCenter(config_);
     POINT aimReferenceGlobal = useScreenCenterAim ? screenCenterGlobal : cursor;
     POINT aimReferenceLocal{
         aimReferenceGlobal.x - letterbox.desktopX,
@@ -152,7 +222,8 @@ void MouseController::update(std::vector<Box> const& boxes,
     };
     if (!config_.enabled || !leftRequested || !hasCursor || boxes.empty()) {
         hasLockedTarget_ = false;
-        cooldownFramesRemaining_ = 0;
+        logState(!config_.enabled ? "disabled" : !leftRequested ? "waiting-left-button" :
+                 !hasCursor ? "cursor-unavailable" : "no-targets", sequence, boxes.size());
         return;
     }
     // Associate the previous box by class and overlap, independently of vector order.
@@ -178,10 +249,6 @@ void MouseController::update(std::vector<Box> const& boxes,
     }
     lockedTarget_ = boxes[static_cast<size_t>(selectedTargetIndex)];
     hasLockedTarget_ = true;
-    if (cooldownFramesRemaining_ > 0) {
-        --cooldownFramesRemaining_;
-        return;
-    }
     if (selectedTargetIndex >= 0) {
         MouseMovePlan selectedMovePlan = planMouseMove(
             boxes[static_cast<size_t>(selectedTargetIndex)],
@@ -190,22 +257,57 @@ void MouseController::update(std::vector<Box> const& boxes,
         bool moveSucceeded =
             moveBy(selectedMovePlan.delta.x, selectedMovePlan.delta.y,
                    aimReferenceGlobal.x, aimReferenceGlobal.y);
-        if (moveSucceeded && (selectedMovePlan.delta.x != 0 || selectedMovePlan.delta.y != 0)) {
-            cooldownFramesRemaining_ = config_.moveCooldownFrames;
-        }
-        if constexpr (kLogMoves) {
-            std::cout << "move frame=" << sequence
-                      << " target=" << selectedTargetIndex
-                      << " dx=" << selectedMovePlan.delta.x
-                      << " dy=" << selectedMovePlan.delta.y
-                      << " ok=" << (moveSucceeded ? 1 : 0)
-                      << '\n';
-        }
+        bool noMovement = selectedMovePlan.delta.x == 0 && selectedMovePlan.delta.y == 0;
+        logState(noMovement ? "centered" : moveSucceeded ? "input-submitted" : "input-failed",
+                 sequence, boxes.size(), selectedMovePlan.delta.x, selectedMovePlan.delta.y,
+                 !noMovement);
     }
 }
 
 bool MouseController::moveBy(int dx, int dy, int referenceX, int referenceY) {
     MouseMovePlan plan{};
     plan.delta = POINT{dx, dy};
-    return applyMouseMovePlan(plan, POINT{referenceX, referenceY}, config_);
+    bool attempted = config_.enabled && (dx != 0 || dy != 0);
+    if (attempted) {
+        ++moveAttempts_;
+    }
+    POINT relativeDelta{};
+    SetLastError(ERROR_SUCCESS);
+    bool succeeded = applyMouseMovePlan(plan, POINT{referenceX, referenceY}, config_, relativeDelta);
+    lastInputError_ = succeeded ? ERROR_SUCCESS : GetLastError();
+    lastRelativeDx_ = relativeDelta.x;
+    lastRelativeDy_ = relativeDelta.y;
+    if (attempted && succeeded) {
+        ++movesSubmitted_;
+    }
+    return succeeded;
+}
+
+void MouseController::logState(char const* state, uint64_t sequence, std::size_t boxCount,
+                               int dx, int dy, bool force) {
+    auto now = std::chrono::steady_clock::now();
+    if (!force && now < nextDiagnosticLog_) {
+        return;
+    }
+    nextDiagnosticLog_ = now + std::chrono::seconds(2);
+    DWORD foregroundPid = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &foregroundPid);
+    std::cout << "[mouse] state=" << state << " frame=" << sequence
+              << " elapsed_ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(now - diagnosticsStart_).count()
+              << " boxes=" << boxCount << " mode=" << config_.mode
+              << " left_down=" << leftButtonDown_.load()
+              << " hook_events=" << rawMouseEvents_.load()
+              << " injected_events=" << injectedMouseEvents_.load()
+              << " injected_down=" << injectedDownEvents_.load()
+              << " injected_up=" << injectedUpEvents_.load()
+              << " down_events=" << leftDownEvents_.load()
+              << " up_events=" << leftUpEvents_.load()
+              << " target_class=" << (hasLockedTarget_ ? lockedTarget_.classId : -1)
+              << " target_score=" << (hasLockedTarget_ ? lockedTarget_.score : 0.0f)
+              << " planned_dx=" << dx << " planned_dy=" << dy
+              << " relative_dx=" << lastRelativeDx_ << " relative_dy=" << lastRelativeDy_
+              << " relative_scale=" << config_.relativeScale
+              << " attempts=" << moveAttempts_ << " submitted=" << movesSubmitted_
+              << " win32_error=" << lastInputError_
+              << " foreground_pid=" << foregroundPid << '\n';
 }

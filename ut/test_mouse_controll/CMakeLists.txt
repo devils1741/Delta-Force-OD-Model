@@ -24,3 +24,15 @@ if(MSVC)
     target_compile_options(mouse_rectangle_test PRIVATE /utf-8)
 endif()
 target_link_libraries(mouse_rectangle_test PRIVATE user32 gdi32)
+
+add_executable(mouse_input_probe
+    probe_main.cpp
+    MouseInputProbe.h
+    MouseInputProbe.cpp
+    "${MODEL_ROOT}/src/source/MouseController.cpp"
+    "${MODEL_ROOT}/src/include/MouseController.h")
+target_include_directories(mouse_input_probe PRIVATE "${MODEL_ROOT}/src/include")
+if(MSVC)
+    target_compile_options(mouse_input_probe PRIVATE /utf-8)
+endif()
+target_link_libraries(mouse_input_probe PRIVATE user32)

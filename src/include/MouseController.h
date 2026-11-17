@@ -4,12 +4,19 @@
 #include "Detection.h"
 
 #include <cstdint>
+#include <chrono>
+#include <cstddef>
 #include <vector>
+#include <atomic>
+#include <thread>
 
-/** @brief 封装目标选择、鼠标移动和逐帧冷却；由主线程调用。 */
+/** @brief 封装目标选择和每次检测更新时的鼠标移动；由主线程调用。 */
 class MouseController {
 public:
     explicit MouseController(MouseConfig const& config);
+    ~MouseController();
+    MouseController(MouseController const&) = delete;
+    MouseController& operator=(MouseController const&) = delete;
 
     /** @brief 每次收到新的检测结果时更新鼠标控制。 */
     void update(std::vector<Box> const& boxes, LetterboxInfo const& letterbox,
@@ -19,8 +26,26 @@ public:
     bool moveBy(int dx, int dy, int referenceX, int referenceY);
 
 private:
+    void logState(char const* state, uint64_t sequence, std::size_t boxCount,
+                  int dx = 0, int dy = 0, bool force = false);
+
     MouseConfig config_;
+    std::atomic<bool> leftButtonDown_{false};
+    std::atomic<uint64_t> rawMouseEvents_{0};
+    std::atomic<uint64_t> injectedMouseEvents_{0};
+    std::atomic<uint64_t> injectedDownEvents_{0};
+    std::atomic<uint64_t> injectedUpEvents_{0};
+    std::atomic<uint64_t> leftDownEvents_{0};
+    std::atomic<uint64_t> leftUpEvents_{0};
+    std::thread inputThread_;
+    unsigned long inputThreadId_{0};
     Box lockedTarget_{};
     bool hasLockedTarget_{false};
-    int cooldownFramesRemaining_{0};
+    unsigned long lastInputError_{0};
+    uint64_t moveAttempts_{0};
+    uint64_t movesSubmitted_{0};
+    int lastRelativeDx_{0};
+    int lastRelativeDy_{0};
+    std::chrono::steady_clock::time_point diagnosticsStart_{std::chrono::steady_clock::now()};
+    std::chrono::steady_clock::time_point nextDiagnosticLog_{};
 };
