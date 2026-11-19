@@ -1,5 +1,7 @@
 #include "TensorRtDetector.h"
 
+#include <vector>
+
 #include "AppConfig.h"
 #include "Detection.h"
 
@@ -174,7 +176,6 @@ TensorRtDetector::TensorRtDetector(std::filesystem::path const& onnxPath, std::f
 
     inputBytes_ = 3ULL * static_cast<size_t>(inputW_) * static_cast<size_t>(inputH_) * sizeof(float);
     outputBytes_ = outputCount_ * sizeof(float);
-    output_.resize(outputCount_);
 
     void* input{};
     void* output{};
@@ -194,20 +195,6 @@ TensorRtDetector::~TensorRtDetector() {
     if (stream_) {
         cudaStreamDestroy(stream_);
     }
-}
-
-std::vector<float> TensorRtDetector::infer(float const* input) {
-    checkCuda(cudaMemcpyAsync(deviceInput_.get(), input, inputBytes_, cudaMemcpyHostToDevice, stream_),
-              "cudaMemcpyAsync H2D");
-    return inferDeviceInput();
-}
-
-std::vector<float> TensorRtDetector::inferDeviceInput() {
-    enqueueDeviceInput();
-    checkCuda(cudaMemcpyAsync(output_.data(), deviceOutput_.get(), outputBytes_, cudaMemcpyDeviceToHost, stream_),
-              "cudaMemcpyAsync D2H");
-    checkCuda(cudaStreamSynchronize(stream_), "cudaStreamSynchronize");
-    return output_;
 }
 
 void TensorRtDetector::enqueueDeviceInput() {

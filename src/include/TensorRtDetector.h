@@ -7,7 +7,6 @@
 #include <memory>
 #include <string>
 #include <cstddef>
-#include <vector>
 
 /**
  * @brief TensorRT日志适配器。
@@ -58,17 +57,6 @@ public:
      */
     TensorRtDetector& operator=(TensorRtDetector const& other) = delete;
 
-    /**
-     * @brief 使用主机端输入张量执行一次推理。
-     * @param input CPU内存中的RGB CHW浮点输入张量。
-     * @return TensorRT输出张量数据。
-     */
-    std::vector<float> infer(float const* input);
-    /**
-     * @brief 使用已经写入GPU的输入张量执行一次推理。
-     * @return TensorRT输出张量数据。
-     */
-    std::vector<float> inferDeviceInput();
     void enqueueDeviceInput();
     /**
      * @brief 获取GPU输入缓冲区指针。
@@ -81,16 +69,6 @@ public:
      * @return CUDA stream句柄。
      */
     cudaStream_t stream() const { return stream_; }
-    /**
-     * @brief 获取TensorRT输入张量名称。
-     * @return 输入张量名称的只读引用。
-     */
-    std::string const& inputName() const { return inputName_; }
-    /**
-     * @brief 获取TensorRT输出张量名称。
-     * @return 输出张量名称的只读引用。
-     */
-    std::string const& outputName() const { return outputName_; }
     /**
      * @brief 获取模型输入宽度。
      * @return 输入宽度，单位为像素。
@@ -149,5 +127,4 @@ private:
     size_t inputBytes_{};
     size_t outputBytes_{};
     size_t outputCount_{};
-    std::vector<float> output_;
 };

@@ -44,14 +44,11 @@ add_executable(delta
         src/main.cpp
         src/source/MouseController.cpp
         src/source/AppConfig.cpp
-        src/source/Detection.cpp
         src/source/CudaPostprocess.cu
         src/source/CudaPreprocess.cu
         src/source/DxgiScreenCapture.cpp
         src/source/OverlayWindow.cpp
-        src/source/PreviewWindow.cpp
         src/source/RealtimePipeline.cpp
-        src/source/ScreenCapture.cpp
         src/source/TensorRtDetector.cpp
         src/include/MouseController.h
         src/include/AppConfig.h
@@ -60,9 +57,7 @@ add_executable(delta
         src/include/CudaPreprocess.h
         src/include/DxgiScreenCapture.h
         src/include/OverlayWindow.h
-        src/include/PreviewWindow.h
         src/include/RealtimePipeline.h
-        src/include/ScreenCapture.h
         src/include/TensorRtDetector.h)
 
 target_compile_options(delta PRIVATE

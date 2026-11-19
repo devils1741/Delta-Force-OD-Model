@@ -24,7 +24,6 @@ public:
         cudaStream_t stream);
 
     int rawDetectionCount() const { return hostRawCount_; }
-    int teamFilteredCount() const { return hostTeamFilteredCount_; }
 
 private:
     struct CudaDeleter {
