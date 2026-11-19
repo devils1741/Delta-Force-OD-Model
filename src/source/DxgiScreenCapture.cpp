@@ -148,7 +148,7 @@ bool DxgiScreenCapture::captureToDevice(float* deviceInput, cudaStream_t stream)
 
 void DxgiScreenCapture::initD3d() {
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-
+    
     ComPtr<IDXGIFactory1> factory;
     checkHr(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "CreateDXGIFactory1");
 

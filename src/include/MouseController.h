@@ -41,6 +41,9 @@ private:
     unsigned long inputThreadId_{0};
     Box lockedTarget_{};
     bool hasLockedTarget_{false};
+    std::chrono::steady_clock::time_point lastSmoothUpdate_{};
+    double remainderX_{0.0};
+    double remainderY_{0.0};
     unsigned long lastInputError_{0};
     uint64_t moveAttempts_{0};
     uint64_t movesSubmitted_{0};

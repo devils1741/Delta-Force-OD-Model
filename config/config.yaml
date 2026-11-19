@@ -23,6 +23,8 @@ mouse:
   enabled: true # 是否启用鼠标自动操作
   mode: relative
   relative_scale: 0.9
+  # Exponential time constant in milliseconds; 0 disables smoothing.
+  smoothing_time_ms: 10
   move_cooldown_frames: 0
 
 tensorrt:

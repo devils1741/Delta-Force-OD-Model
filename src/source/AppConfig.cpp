@@ -103,6 +103,10 @@ void AppConfig::load(fs::path const& path) {
     mouse_.enabled = readOr(mouse, "enabled", mouse_.enabled);
     mouse_.mode = lowerCopy(readOr(mouse, "mode", mouse_.mode));
     mouse_.relativeScale = readOr(mouse, "relative_scale", mouse_.relativeScale);
+    mouse_.smoothingTimeMs = readOr(mouse, "smoothing_time_ms", mouse_.smoothingTimeMs);
+    if (!(mouse_.smoothingTimeMs >= 0.0f) || mouse_.smoothingTimeMs > 10000.0f) {
+        throw std::runtime_error("mouse.smoothing_time_ms must be between 0 and 10000");
+    }
     mouse_.moveCooldownFrames = readOr(mouse, "move_cooldown_frames", mouse_.moveCooldownFrames);
 
     auto tensorrt = root["tensorrt"];

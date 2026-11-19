@@ -47,6 +47,7 @@ struct MouseConfig {
     bool enabled{true};
     std::string mode{"relative"};
     float relativeScale{1.0f};
+    float smoothingTimeMs{100.0f};
     int moveCooldownFrames{12};
 };
 

@@ -222,6 +222,8 @@ void MouseController::update(std::vector<Box> const& boxes,
     };
     if (!config_.enabled || !leftRequested || !hasCursor || boxes.empty()) {
         hasLockedTarget_ = false;
+        lastSmoothUpdate_ = {};
+        remainderX_ = remainderY_ = 0.0;
         logState(!config_.enabled ? "disabled" : !leftRequested ? "waiting-left-button" :
                  !hasCursor ? "cursor-unavailable" : "no-targets", sequence, boxes.size());
         return;
@@ -246,6 +248,7 @@ void MouseController::update(std::vector<Box> const& boxes,
     }
     if (selectedTargetIndex < 0) {
         selectedTargetIndex = nearestTargetIndexToPoint(boxes, aimReferenceLocal);
+        remainderX_ = remainderY_ = 0.0;
     }
     lockedTarget_ = boxes[static_cast<size_t>(selectedTargetIndex)];
     hasLockedTarget_ = true;
@@ -254,11 +257,32 @@ void MouseController::update(std::vector<Box> const& boxes,
             boxes[static_cast<size_t>(selectedTargetIndex)],
             letterbox,
             aimReferenceGlobal);
+        auto now = std::chrono::steady_clock::now();
+        if (config_.smoothingTimeMs > 0.0f) {
+            // Start a fresh gesture without accumulating time spent idle.
+            double dt = lastSmoothUpdate_ == std::chrono::steady_clock::time_point{}
+                ? 0.0 : std::chrono::duration<double>(now - lastSmoothUpdate_).count();
+            dt = std::clamp(dt, 0.0, 0.05);
+            double alpha = -std::expm1(-dt / (config_.smoothingTimeMs * 0.001));
+            auto smoothAxis = [alpha](LONG error, double& remainder) -> LONG {
+                if (error == 0) { remainder = 0.0; return 0; }
+                if (remainder * error < 0.0) remainder = 0.0;
+                double step = alpha * error + remainder;
+                LONG integral = static_cast<LONG>(std::trunc(step));
+                remainder = step - integral;
+                return integral;
+            };
+            selectedMovePlan.delta.x = smoothAxis(selectedMovePlan.delta.x, remainderX_);
+            selectedMovePlan.delta.y = smoothAxis(selectedMovePlan.delta.y, remainderY_);
+        }
+        lastSmoothUpdate_ = now;
         bool moveSucceeded =
             moveBy(selectedMovePlan.delta.x, selectedMovePlan.delta.y,
                    aimReferenceGlobal.x, aimReferenceGlobal.y);
+        if (!moveSucceeded) remainderX_ = remainderY_ = 0.0;
         bool noMovement = selectedMovePlan.delta.x == 0 && selectedMovePlan.delta.y == 0;
-        logState(noMovement ? "centered" : moveSucceeded ? "input-submitted" : "input-failed",
+        logState(noMovement ? (selectedMovePlan.errorX == 0 && selectedMovePlan.errorY == 0
+                     ? "centered" : "smoothing") : moveSucceeded ? "input-submitted" : "input-failed",
                  sequence, boxes.size(), selectedMovePlan.delta.x, selectedMovePlan.delta.y,
                  !noMovement);
     }
