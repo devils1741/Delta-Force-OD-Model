@@ -13,7 +13,7 @@ MouseConfig MouseInputProbe::configuration() {
     config.enabled = true;
     config.mode = "relative";
     config.relativeScale = 1.0f;
-    config.moveCooldownFrames = 0;
+    config.moveIntervalMs = 0;
     return config;
 }
 

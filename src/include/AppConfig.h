@@ -21,6 +21,14 @@ struct ModelConfig {
  * 控制目标帧率、置信度阈值和最大检测数量。
  */
 struct InferenceConfig {
+    bool showKeypoints{true};
+    float keypointThreshold{0.3f};
+    float keypointRadiusPx{4.0f};
+    bool showFriendBoxes{true};
+    bool showFriendLogoBoxes{true};
+    float logoScoreThreshold{0.3f};
+    float logoMinWidthPx{0.0f};
+    float logoMinHeightPx{0.0f};
     int targetFps{60};
     float scoreThreshold{0.30f};
     int maxDetections{300};
@@ -28,7 +36,6 @@ struct InferenceConfig {
     float minTargetWidthPx{24.0f};
     float minTargetHeightPx{48.0f};
     int logIntervalFrames{30};
-    int overlayIntervalFrames{4};
 };
 
 /**
@@ -47,8 +54,17 @@ struct MouseConfig {
     bool enabled{true};
     std::string mode{"relative"};
     float relativeScale{1.0f};
-    float smoothingTimeMs{100.0f};
-    int moveCooldownFrames{12};
+    float relativeScaleX{1.0f};
+    float relativeScaleY{1.0f};
+    bool relativeDirect{true};
+    bool lockTarget{true};
+    int targetLostGraceMs{150};
+    float relativeGain{0.2f};
+    int relativeMaxStep{12};
+    float relativeDeadzonePx{2.0f};
+    int relativeFeedbackMs{50};
+    int moveIntervalMs{0};
+    float targetSmoothingMs{0.0f};
 };
 
 /**

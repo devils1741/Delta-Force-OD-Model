@@ -80,26 +80,19 @@ target_link_libraries(delta PRIVATE
         user32
         gdi32
         d3d11
-        dxgi)
+        dxgi
+        dcomp
+        d3dcompiler)
 
-# Keep runtime resources beside the executable for Explorer/Release launches.
+# Keep runtime configuration beside the executable for Explorer/Release launches.
 add_custom_command(TARGET delta POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:delta>/config" "$<TARGET_FILE_DIR:delta>/weights"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/config/config.yaml"
-        "$<TARGET_FILE_DIR:delta>/config/config.yaml"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.onnx"
-        "$<TARGET_FILE_DIR:delta>/weights/best.onnx"
+        "$<TARGET_FILE_DIR:delta>/config"
+        COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/config/config.yaml"
+        "-DDESTINATION=$<TARGET_FILE_DIR:delta>/config/config.yaml"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyDefaultConfig.cmake"
         VERBATIM)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.engine")
-    add_custom_command(TARGET delta POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/weights/best.engine"
-            "$<TARGET_FILE_DIR:delta>/weights/best.engine"
-            VERBATIM)
-endif()
 
 foreach(tensorrt_dll IN ITEMS
         nvinfer_11.dll
@@ -131,4 +124,9 @@ else()
     message(STATUS "Doxygen not found; install Doxygen to enable the docs target.")
 endif()
 
+include(CTest)
 add_subdirectory(ut/test_mouse_controll)
+
+if(BUILD_TESTING)
+    add_subdirectory(ut/test_gpu_pipeline)
+endif()

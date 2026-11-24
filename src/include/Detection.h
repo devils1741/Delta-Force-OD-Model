@@ -12,6 +12,8 @@ struct Box {
     float y2{};
     float score{};
     int classId{};
+    // Screen-space x, y and confidence for each of two pose points.
+    float keypoints[6]{};
 };
 
 /**

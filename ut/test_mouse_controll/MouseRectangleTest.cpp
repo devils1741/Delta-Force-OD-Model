@@ -70,7 +70,7 @@ MouseConfig MouseRectangleTest::configuration(std::string const& mode) {
     if (mode != "absolute" && mode != "relative") throw std::runtime_error("Use absolute or relative");
     MouseConfig config;
     config.mode = mode;
-    config.moveCooldownFrames = 0;
+    config.moveIntervalMs = 0;
     return config;
 }
 

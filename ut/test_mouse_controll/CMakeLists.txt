@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(test_mouse_controll LANGUAGES CXX)
+    include(CTest)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -36,3 +37,14 @@ if(MSVC)
     target_compile_options(mouse_input_probe PRIVATE /utf-8)
 endif()
 target_link_libraries(mouse_input_probe PRIVATE user32)
+
+# Automated controller checks use fake OS input; they never move the real cursor.
+if(BUILD_TESTING)
+    add_executable(mouse_controller_test MouseControllerTest.cpp)
+    target_include_directories(mouse_controller_test PRIVATE "${MODEL_ROOT}/src/include")
+    if(MSVC)
+        target_compile_options(mouse_controller_test PRIVATE /utf-8)
+    endif()
+    target_link_libraries(mouse_controller_test PRIVATE user32)
+    add_test(NAME mouse_controller_regression COMMAND mouse_controller_test)
+endif()

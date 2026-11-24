@@ -57,10 +57,11 @@ public:
      */
     bool captureToDevice(float* deviceInput, cudaStream_t stream);
 
-    /**
-     * @brief 获取屏幕宽度。
-     * @return 屏幕宽度，单位为像素。
-     */
+    // Borrowed interfaces; capture and rendering use the same device and immediate context.
+    ID3D11Device* device() const { return device_.Get(); }
+    ID3D11DeviceContext* context() const { return context_.Get(); }
+
+    /** @brief 获取屏幕宽度，单位为像素。 */
     int screenW() const { return screenW_; }
     /**
      * @brief 获取屏幕高度。

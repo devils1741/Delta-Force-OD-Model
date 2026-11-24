@@ -203,6 +203,11 @@ void DxgiScreenCapture::initD3d() {
         output_ = firstOutput;
     }
 
+    // CUDA and capture/rendering must use the same physical adapter.
+    int cudaDevice{};
+    checkCuda(cudaD3D11GetDevice(&cudaDevice, selectedAdapter.Get()), "cudaD3D11GetDevice (capture adapter must support CUDA)");
+    checkCuda(cudaSetDevice(cudaDevice), "cudaSetDevice capture adapter");
+
     D3D_FEATURE_LEVEL levels[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,

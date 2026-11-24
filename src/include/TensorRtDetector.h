@@ -79,6 +79,7 @@ public:
      * @return 输入高度，单位为像素。
      */
     int inputH() const { return inputH_; }
+    bool poseOutput() const { return poseOutput_; }
     size_t outputCount() const { return outputCount_; }
 
 private:
@@ -127,4 +128,5 @@ private:
     size_t inputBytes_{};
     size_t outputBytes_{};
     size_t outputCount_{};
+    bool poseOutput_{};
 };

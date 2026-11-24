@@ -1,26 +1,28 @@
 #pragma once
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-
 #include "Detection.h"
-
+#include <cuda_runtime_api.h>
+#include <memory>
+#ifdef DELTA_GPU_TESTING
 #include <vector>
+#include <cstdint>
+#endif
+struct ID3D11Device;
+struct ID3D11DeviceContext;
 
-/**
- * @brief 创建全屏透明置顶检测框覆盖窗口。
- * @param instance 当前进程实例句柄。
- * @param width 覆盖窗口宽度。
- * @param height 覆盖窗口高度。
- * @return 创建成功的窗口句柄。
- */
-HWND createOverlayWindow(HINSTANCE instance, int x, int y, int width, int height);
-
-/**
- * @brief 在透明覆盖窗口上绘制检测框。
- * @param hwnd 覆盖窗口句柄。
- * @param boxes 需要绘制的检测框列表。
- * @note 无返回值。
- */
-void drawOverlay(HWND hwnd, std::vector<Box> const& boxes, LetterboxInfo const& letterbox);
+// CUDA writes the D3D11 shader buffer; DirectComposition presents transparent GPU frames.
+class GpuOverlay {
+public:
+    GpuOverlay(ID3D11Device* device, ID3D11DeviceContext* context,
+               LetterboxInfo const& letterbox, int maxDetections);
+    ~GpuOverlay();
+    GpuOverlay(GpuOverlay const&) = delete;
+    GpuOverlay& operator=(GpuOverlay const&) = delete;
+    void draw(Box const* boxes, int const* count, LetterboxInfo const& letterbox,
+              bool showRegion, cudaStream_t stream, bool showKeypoints = true, float keypointThreshold = .3f, float keypointRadius = 4.f, bool showFriends = true, bool showLogos = true);
+#ifdef DELTA_GPU_TESTING
+    std::vector<uint32_t> readPixelsForTest();
+#endif
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};

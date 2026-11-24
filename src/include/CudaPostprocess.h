@@ -1,44 +1,24 @@
 #pragma once
-
 #include "Detection.h"
-
 #include <cuda_runtime_api.h>
-
 #include <memory>
-#include <vector>
 
+// GPU-only decode, NMS and size filtering. No host readback or stream synchronization.
 class CudaPostprocessor {
 public:
     explicit CudaPostprocessor(int maxDetections);
     ~CudaPostprocessor();
-
     CudaPostprocessor(CudaPostprocessor const&) = delete;
     CudaPostprocessor& operator=(CudaPostprocessor const&) = delete;
-
-    std::vector<Box> decodeDetections(
-        float const* deviceOutput,
-        float const* deviceInput,
-        int candidateCount,
-        LetterboxInfo const& letterbox,
-        float scoreThreshold,
-        cudaStream_t stream);
-
-    int rawDetectionCount() const { return hostRawCount_; }
-
+    void enqueue(float const* output, int candidates, LetterboxInfo const& letterbox,
+                 float threshold, float minWidth, float minHeight, cudaStream_t stream, bool poseOutput = false, float logoThreshold = .3f, float logoMinWidth = 0.f, float logoMinHeight = 0.f);
+    Box const* deviceBoxes() const { return static_cast<Box const*>(boxes_.get()); }
+    int const* deviceCount() const { return static_cast<int const*>(count_.get()); }
+    int capacity() const { return maxDetections_; }
 private:
-    struct CudaDeleter {
-        void operator()(void* ptr) const;
-    };
-
+    struct CudaDeleter { void operator()(void* ptr) const; };
     using CudaPtr = std::unique_ptr<void, CudaDeleter>;
-
     int maxDetections_{};
-    CudaPtr deviceBoxes_;
-    CudaPtr deviceCount_;
-    CudaPtr deviceRawCount_;
-    CudaPtr deviceTeamFilteredCount_;
-    std::vector<Box> hostBoxes_;
-    int hostCount_{};
-    int hostRawCount_{};
-    int hostTeamFilteredCount_{};
+    int allocatedCandidates_{};
+    CudaPtr boxes_, count_;
 };

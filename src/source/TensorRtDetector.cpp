@@ -209,23 +209,23 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         throw std::runtime_error("Failed to create TensorRT runtime");
     }
 
-    if (fs::exists(cachePath) && fs::last_write_time(cachePath) >= fs::last_write_time(onnxPath)) {
+    // engine_path may reference an explicitly exported deployment engine.
+    // Copy timestamps are not a reliable signal of model compatibility.
+    if (fs::exists(cachePath)) {
         auto bytes = readFile(cachePath);
         auto const [payloadData, payloadSize] = enginePayload(bytes);
         if (payloadData != bytes.data()) {
-            std::cout << "Detected Ultralytics TensorRT metadata wrapper, using raw engine payload.\n";
+            std::cout << "已识别模型元数据，正在加载引擎。\n";
         }
         if (auto* engine = runtime->deserializeCudaEngine(payloadData, payloadSize)) {
-            std::cout << "Loaded TensorRT engine cache: " << cachePath << '\n';
+            std::cout << "已加载模型引擎：" << cachePath << '\n';
             engine_.reset(engine);
             return;
         }
-        std::cerr << "Engine cache is incompatible, rebuilding from ONNX.\n";
-    } else if (fs::exists(cachePath)) {
-        std::cerr << "Engine cache is older than ONNX, rebuilding from ONNX.\n";
+        std::cerr << "引擎不兼容，尝试从ONNX重建。\n";
     }
 
-    std::cout << "Building TensorRT engine from ONNX. First launch may take a while...\n";
+    std::cout << "正在从ONNX构建引擎，首次启动需要等待……\n";
     TrtUniquePtr<nvinfer1::IBuilder> builder(nvinfer1::createInferBuilder(logger_));
     if (!builder) {
         throw std::runtime_error("Failed to create TensorRT builder");
@@ -282,7 +282,7 @@ void TensorRtDetector::buildOrLoadEngine(fs::path const& onnxPath, fs::path cons
         throw std::runtime_error("Failed to build TensorRT engine");
     }
     writeFile(cachePath, serialized->data(), serialized->size());
-    std::cout << "Saved TensorRT engine cache: " << cachePath << '\n';
+    std::cout << "已保存引擎：" << cachePath << '\n';
 
     auto* engine = runtime->deserializeCudaEngine(serialized->data(), serialized->size());
     if (!engine) {
@@ -303,8 +303,8 @@ void TensorRtDetector::discoverTensors() {
     if (inputName_.empty() || outputName_.empty()) {
         throw std::runtime_error("Could not find TensorRT input/output tensors");
     }
-    std::cout << "Input tensor: " << inputName_ << '\n';
-    std::cout << "Output tensor: " << outputName_ << '\n';
+    std::cout << "输入张量：" << inputName_ << '\n';
+    std::cout << "输出张量：" << outputName_ << '\n';
 }
 
 void TensorRtDetector::discoverTensorShapes() {
@@ -317,8 +317,10 @@ void TensorRtDetector::discoverTensorShapes() {
 
     inputH_ = static_cast<int>(inputDims.d[2]);
     inputW_ = static_cast<int>(inputDims.d[3]);
-    if (outputDims.nbDims != 3 || outputDims.d[0] != 1 || outputDims.d[1] != 6 || outputDims.d[2] <= 0)
-        throw std::runtime_error("Expected raw two-class output [1,6,N], got " + dimsToString(outputDims));
+    poseOutput_ = outputDims.nbDims == 3 && outputDims.d[0] == 1 && outputDims.d[2] == 12 && outputDims.d[1] > 0;
+    bool legacy = outputDims.nbDims == 3 && outputDims.d[0] == 1 && outputDims.d[1] == 6 && outputDims.d[2] > 0;
+    if (!poseOutput_ && !legacy)
+        throw std::runtime_error("Expected pose [1,N,12] or legacy OD [1,6,N], got " + dimsToString(outputDims));
     outputCount_ = volume(outputDims);
 
     auto const& model = AppConfig::instance().model();
@@ -329,13 +331,13 @@ void TensorRtDetector::discoverTensorShapes() {
             ", engine=" + std::to_string(inputW_) + "x" + std::to_string(inputH_));
     }
 
-    std::cout << "Input shape: [";
+    std::cout << "输入尺寸：[";
     for (int i = 0; i < inputDims.nbDims; ++i) {
         std::cout << (i ? ", " : "") << inputDims.d[i];
     }
     std::cout << "]\n";
 
-    std::cout << "Output shape: [";
+    std::cout << "输出尺寸：[";
     for (int i = 0; i < outputDims.nbDims; ++i) {
         std::cout << (i ? ", " : "") << outputDims.d[i];
     }
